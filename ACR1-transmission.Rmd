@@ -25,6 +25,8 @@ library (tidyr)
 library(dplyr)
 library(signal)
 library(scales)
+library(stats)
+library(lubridate)
 # Functions
 PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)), extraInfo = "" ){
   ## Theme...
@@ -67,48 +69,62 @@ NormalizeBaseline <- function(trace, normTime = 0 ){
   trace = gather(trace, "electrode", "mV", 3:ncol(trace)) # change structure for ggplot management
   return(trace)
 } ## INPUT trace spreaded i.e. each electrode as column. Won't work if data is not at 10Hz samplerate. Output: normalized, gathered trace for plotting.
-CalculateParameters <- function(trace, stimdelay = 0){
+CalculateParameters <- function(trace, stimdelay = 1){
 # in the chunk during stimulation on.
   #stimdelay=0
-  stimon = which(trace$TimeOfDay=="F1")[1] + stimdelay
+  trace$mV = abs(trace$mV)*-1
+  stimon = which(trace$TimeOfDay=="F1")[1] + stimdelay 
   stimoff= which(trace$TimeOfDay=="F1")[2] + stimdelay 
-  stimchunk = na.omit(trace[stimon:stimoff,])
-  # plot(stimchunk$Time, stimchunk$mV, type="l") +
-  #  abline(v=trace$Time[stimon])
+  stimchunk = na.omit(trace[stimon:(stimoff*2),])
+   plot(stimchunk$Time, stimchunk$mV, type="p") +
+    abline(v=trace$Time[c(stimon,stimoff)],col="red")
           # determine maximum -peak.depol-
-  peak.depol =  min( stimchunk$mV )
-  peakdepol.frame =  max(which(trace$mV==peak.depol)-1)
-  peakdepol.time =  trace$Time[peakdepol.frame]
-          # determine mean V at last 500 ms of the stimulus -ss.depol-
-  ss.depol = mean( stimchunk$mV[(nrow(stimchunk)-50):nrow(stimchunk)] )
-  #plot(stimchunk$Time[(nrow(stimchunk)-50):nrow(stimchunk)], stimchunk$mV[(nrow(stimchunk)-50):nrow(stimchunk)])
   
+  #peak.depol =  min( stimchunk$mV )
+  # peakdepol.frame =  max(which(trace$mV==peak.depol)-1)
+  # peakdepol.time =  trace$Time[peakdepol.frame]
+  # peakdepol.latency = peakdepol.time - trace$Time[stimon]
+          # determine mean V at last 500 ms of the stimulus -ss.depol-
+  stimchunk = na.omit(trace[stimon:stimoff,])
+  if (nrow(stimchunk)>=50 ){
+      ss.depol = mean( stimchunk$mV[(nrow(stimchunk)-50):nrow(stimchunk)] )
+  }
+
   
   # in the chunk between onset of stimulus and peak.depol
   raisechunk = na.omit( trace[stimon:peakdepol.frame,] )
-  #plot(raisechunk$Time, raisechunk$mV, type="l") 
+  peak.depol =  min( raisechunk$mV )
+  peakdepol.frame =  max(which(trace$mV==peak.depol)-1)
+  peakdepol.time =  trace$Time[peakdepol.frame]
+  peakdepol.latency = peakdepol.time - trace$Time[stimon]
+  
+  plot(raisechunk$Time, raisechunk$mV, type="p") 
             # determine max.depol.slope
-  raisechunk.slope = calculateslope(raisechunk$mV)
+  # apply filter to that chunk to avoid slope peaks from noice jumps
+  raisechunk.slope = calculateslope( sgolayfilt(raisechunk$mV, p=1,n=9) )
   peak.depol.slope = min(na.omit(raisechunk.slope) )
   peakdepolslope.frame = which(raisechunk.slope == peak.depol.slope ) + stimon
-  peakdepolslope.time = trace$Time[peakdepolslope.frame]
+  peakdepolslope.time = min( trace$Time[peakdepolslope.frame] )
+  peakdepolslope.latency = min( peakdepolslope.time-trace$Time[stimon] )
 
-  #plot(raisechunk.slope, type="l")
+  plot(raisechunk.slope, type="l")
   
   
   # in the chunk after end of stimulus.
   decaychunk = na.omit(  trace[stimoff:nrow(trace),] )
   #plot(decaychunk$Time,decaychunk$mV, type="l")
-          # determine time at 37% of ss.depol -tau-
-  tau.voltage = round(ss.depol*0.37,2)
+          # determine time at 37% of peak.depol -tau-
+  tau.voltage = round( peak.depol*0.37,2)
   tau.index = min(which( abs(decaychunk$mV- tau.voltage) == min( abs(decaychunk$mV- tau.voltage) ) ) + stimoff)
   tau.abstime = trace$Time[tau.index]
   tau = tau.abstime-trace$Time[stimoff+1]
 
   return(list("peak.depol"=peak.depol, 
              "peakdepol.time"=peakdepol.time, 
+             "peakdepol.latency"=peakdepol.latency,
              "peak.depol.slope"=peak.depol.slope,
              "peakdepolslope.time"=peakdepolslope.time,
+             "peakdepolslope.latency"=peakdepolslope.latency,
              "ss.depol"=ss.depol,
              "tau"=tau,
              "tau.abstime"=tau.abstime,
@@ -252,7 +268,7 @@ transmission.experiment <- function(){
   write.csv(p6s1.trace, "p6s1.csv", row.names = FALSE)
   write.csv(p6s10.trace, "p6s10.csv", row.names = FALSE)
 }
-segment.stimuli <- function(tracein, stimdelay = 0){
+segment.stimuli <- function(tracein, stimdelay = 0, minylim = -100){
   stimuli = stim.indexes
   output = list()
 
@@ -273,7 +289,7 @@ segment.stimuli <- function(tracein, stimdelay = 0){
       } else { # all the rest
         trace.singlestim = trace.e[ (stimuli[s]-(2*sample.rate)) : (stimuli[s+1]+(5*sample.rate)),]
       }
-      plot(trace.singlestim$Time, trace.singlestim$mV, type="l", ylim=rev(c(0,-100)) ) +
+      plot(trace.singlestim$Time, trace.singlestim$mV, type="l", ylim=rev(c(5,minylim)) ) +
       abline(v = tracein$Time[ c(stimuli[s],stimuli[s+1])+stimdelay ], col="red") +
       title(main = paste(stim.duration, "ms",sep = ""))
       Sys.sleep(1)
@@ -305,6 +321,7 @@ summaryparameters = c("Genotype",
                    "peak.depoltime",
                    "peak.depol.slope",
                    "peakdepolslope.time",
+                   "peakdepolslope.latency",
                    "ss.depol",
                    "tau")
 ```
@@ -312,7 +329,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "230622-analysis"
+batchname = "231030-Analysis"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -322,9 +339,13 @@ if(file.exists(batchname)==FALSE){
 
 
 
-3. Modify the traces in the home folder. Then the plot is divided by the stimuli. There should be only 8 stimulus points from step 1 and the order of the stimuli during the experiment must be p1-1s, p1-10s, p6-1s, p6-10s.
+3. Modify the traces in the home folder. Then the plot is divided by the stimuli. 
+
 input   - yyy_Export.txt files in the home folder
-Output  - List >savename.RData< with all the separated pulses of all for that recording
+Output  - List >savename.RData< with all the separated pulses for that recording. Traces are saved in the list in their occurrence order
+```{r}
+stimulusDelay = 0# the time between light onset and the computer making the mark.
+```
 
 ```{r}
 setwd(home)
@@ -346,6 +367,9 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   # Save info from E1 column name
   metaData = names(trace)[grep("E1", names(trace))]
   leaf = strsplit(metaData,"_")[[1]][grep("L",strsplit(metaData,"_")[[1]])]
+  if(length(leaf)==0 ){
+    leaf = "none"
+  }
   stimulus = strsplit(metaData,"_")[[1]][grep("S",strsplit(metaData,"_")[[1]])]
   genotype = strsplit(metaData,"_")[[1]][2]
 
@@ -355,14 +379,14 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   }
   names(trace)[3:ncol(trace)] = electrodeNums # Make the columns' names numeric variables
   # Select just few electrodes.
-  pickElectrodes = c(1,2)
+  pickElectrodes = c(1,2)#c(1,2)
   trace = trace[,c(1,2,which(names(trace)%in%pickElectrodes))]
   
   
   stim.indexes =  which(trace$TimeOfDay == "F1")-1
   stimTimes = trace$Time[stim.indexes]
 
-
+  which(trace$Time == 0)
   # normalize and gather
   trace = NormalizeBaseline(trace, normTime = 1)
   # fix voltage units to mV
@@ -374,7 +398,7 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   trace$Genotype = genotype
   trace$Stim = stimulus
   trace$Leaf = leaf
-  trace$id = recording.id # esto de donde sale??
+  trace$id = recording.id # esto de donde sale?? - un contador que incrementa en cada iteracion.
   PlotTrace(trace)
   # Filter?
   answer <- readline (prompt="Filter? [y], [n]  ")
@@ -385,15 +409,25 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   if (answer == "y"){
     trace = filterTrace(trace)
     PlotTrace(trace)
+    
   }
   print(paste(length(stimTimes)," stimuli at (s)",sep = ""))
   print(stimTimes)
   
-  trace.segmented = segment.stimuli(trace, stimdelay = 200)
   
   
+  ## SAVE
+  if ( length(stimTimes) > 0 ){
+      # function that separates each pulse and saves everything in a list 
+  trace.segmented = segment.stimuli(trace, stimdelay = stimulusDelay , minylim = -100)
+  
+  # save that list as a RData file.
   save(trace.segmented, file = paste(batchfolder,"/",savename, ".RData",sep = ""))
   # transmission.experiment() # runs that analysis
+  } else {
+    save(trace, file = paste(batchfolder,"/",savename, ".RData",sep = ""))
+  }
+
   
   
       ##
@@ -403,87 +437,205 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
 ```
 
 
+3.1-Pulses under different treatments.
+input   - List >savename.RData< with all the separated pulses of all for that recording
+Output  - same file modified with treatment information
+```{r}
+## Modify according to experiment!
+treatment = "flg22-10mM"
+pulses.per.round = 3
+```
+
+```{r}
+setwd(batchfolder)
+# load data
+f = list.files()[grep(".RData", list.files()) ]
+load( f )
+# label each pulse treatment and round.
+if(length(trace.segmented)%%pulses.per.round != 0){
+  print("Number of traces not multiple of the pulses per round!")
+}
+for(i in c(1:3)){
+  trace.segmented[[i]][[1]]$Treatment = "baseline"
+  trace.segmented[[i]][[2]]$Treatment = "baseline"
+  trace.segmented[[i]][[1]]$Treatment.time = 0
+  trace.segmented[[i]][[2]]$Treatment.time = 0
+}
+time.initial = period_to_seconds(hms( trace.segmented[[1]][[1]]$TimeOfDay[1] )) 
+counter = 1
+for(i in c(4:length(trace.segmented)) ){
+  if(counter <= 3){
+    if(counter==1){
+      time.pulse =round (period_to_seconds(hms(trace.segmented[[i]][[1]]$TimeOfDay[1])) -
+        time.initial ,0 ) 
+    }
+    trace.segmented[[i]][[1]]$Treatment = treatment
+    trace.segmented[[i]][[2]]$Treatment = treatment
+    trace.segmented[[i]][[1]]$Treatment.time = time.pulse
+    trace.segmented[[i]][[2]]$Treatment.time = time.pulse
+    print(time.pulse)
+    counter = counter + 1
+  }
+  if(counter > 3){
+    counter = 1
+  }
+}
+# save that list as a RData file.
+savename = substr(f,1,(nchar(f)-6))
+save(trace.segmented, file = paste(batchfolder,"/",savename, ".RData",sep = ""))
+```
+
+
 
 4. Analyze - calculate raising slope, peak depol, steady state depol, and tau.
-input   -  >p#s#.csv< traces in the batch folder
-output  - datasummary saved as "parameters_summary.csv" for each stimulus the calculated parameters 
+input   -  >genotype.RData< traces in the batch folder. The list is called "trace.segmented"
+output  - datasummary saved as "parameters_summary.csv" for each stimulus the calculated parameters, for all the electrodes in the file. 
   peak.depol - max depolarization
   peak.depol.slope - raising time of depolarization upon simulus
   peakdepolslope.time - time at which depol slope is max
   ss.depol - depolarization in the last second.
-  tau - time at which voltage is 37% of the ss.depol after the stimulus ends.
+  tau - time at which voltage is 37% of the peak.depol after the stimulus ends.
 ```{r}
 setwd(batchfolder)
+if(file.exists( paste(batchfolder,"/PulsePlots",sep=""))==FALSE){
+  dir.create( paste(batchfolder,"/PulsePlots",sep=""))
+}
 # make for loop for all the files
-files = list.files()
+files =list.files()[grep("RData",list.files())]
 datasummary = NULL
 for(f in files){
-  data = read.csv(f)
+  load(f)
   print(f)
   # separate stim info into columns
-  data = separate(data, Stim,c("stim.position","stim.power","stim.duration"),sep = "_")
-  # pick only one recording with all the available electrodes
-  uniqueids = unique(cbind(data$Genotype,data$record.id,data$stim.position,data$electrode))
-  for(i in 
-      1:nrow(uniqueids) ){
-    print(i)
+  # If there is cut information- save
+  if( length(grep("cut",f)) != 0  ){
+    petiol.state = strsplit(f, "-")[[1]][2]
+    petiol.state <- substr(petiol.state, 1, (nchar(petiol.state)-6) )
+  } 
   
-    onepulse = data %>% dplyr::filter(  Genotype==uniqueids[i,1] & 
-                                    record.id==uniqueids[i,2] &
-                                    stim.position==uniqueids[i,3] &
-                                    electrode==uniqueids[i,4] )
-    
-    savename = paste( uniqueids[i,1],"_",uniqueids[i,2],"_", onepulse$stim.power[1], onepulse$stim.duration[1], ".E",uniqueids[i,4], uniqueids[i,3], sep = "" )
+  # loop through every one stimulus or pulse with all the available electrodes
+  for(i in 1:length(names(trace.segmented)) ){
+    print(paste("stimulus #",i,"-",names(trace.segmented)[i]))
+    # Loop through electrodes
+    for(e in names(trace.segmented[[i]]) ){ #c(1) names(trace.segmented[[i]])
+      onepulse = trace.segmented[[i]][[e]]
+      savename = paste( substr(f,1,nchar(f)-6),"#",i,"_e",onepulse$electrode[1],"_",onepulse$Stim[1],"_",onepulse$Leaf[1], sep = "" )
+
+      
+      
     # fix time and V offset
-    onepulse$Time = onepulse$Time-onepulse$Time[which(onepulse$TimeOfDay=="F1")[1]-1] # set the stimulus onset as time = 0 
-    onepulse$mV = onepulse$mV - mean(na.omit(onepulse$mV[1:190]))  # set the voltage baseline as 0
-plot(onepulse$Time,onepulse$mV)
-      # calculate parameters
-    parameters = CalculateParameters(onepulse)
-# do fitting for tau?
-    plot(onepulse$Time, onepulse$mV, main=savename) + 
-    abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+1])+
-    abline(v=parameters$peakdepolslope.time, col="green", lty=1)+
-    abline(v=parameters$tau.abstime, col="green", lty=1)+
-    abline(h=parameters$peak.depol, col="green", lty=1)+
-    abline(h=parameters$ss.depol, col="red", lty=2) +
-    abline(h=parameters$tau.voltage, col="red", lty=2)  
+    onepulse$Time = onepulse$Time-onepulse$Time[which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay] # set the stimulus onset as time = 0 
+    onepulse$mV = onepulse$mV - mean(na.omit(onepulse$mV[1:(which(onepulse$TimeOfDay=="F1")[1]-10)]))  # set the voltage baseline as 0
+    plot(onepulse$Time,onepulse$mV)+
+  abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+1], col="red")
     
-    print(parameters[c(5,6,7,8)])
-    ## Save stimulus trace
+          # determine plot x limits
+      from = which(round(onepulse$Time,1)==(-0.1))[1]
+      to =  nrow(onepulse) #  which(round(onepulse$Time,1)== 10)[1] #  round(parameters$tau.abstime))[1]+100 #nrow( onepulse)
+        #
+     
+    
+# if trace's absolut max peak is less than 2mV in amplitude:
+   if( min( abs( onepulse$mV[which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay:
+                          which(onepulse$TimeOfDay=="F1")[2]+stimulusDelay] )*-1 ) - mean( onepulse$mV[1:which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay] ) > -0.1 ) {
+ # plot
+    plot(onepulse$Time[from:to], 
+         onepulse$mV[from:to], 
+         main=savename, 
+         #ylim=c(-2,2),
+         cex=0.5,
+         type= "l") + 
+    abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+stimulusDelay],col="green")
     answer <- readline (prompt="Save plot and data? [y] to save, [n] to skip trace and not save ")
     while ( nchar(answer)!=1 ){
       print("No valid input, try again ")
       answer <- readline (prompt="Save plot and data? [y] to save, [n] to skip trace and not save ")
     }
     if( answer == "y" ){
-      pdf(file = paste( savename,".pdf" , sep = "") )
-        plot(onepulse$Time, onepulse$mV, main=savename) + 
-        abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+1])+
-        abline(v=parameters$peakdepolslope.time, col="green", lty=1)+
-        abline(v=parameters$tau.abstime, col="green", lty=1)+
-        abline(h=parameters$peak.depol, col="green", lty=1)+
-        abline(h=parameters$ss.depol, col="red", lty=2) +
-        abline(h=parameters$tau.voltage, col="red", lty=2)
+      pdf(file = paste( batchfolder,"/PulsePlots/",savename,".pdf" , sep = "") )
+      
+            plot(onepulse$Time[from:to], 
+         onepulse$mV[from:to], 
+         main=savename, 
+         ylim=c(-2,2),
+         cex=0.5,
+         type= "l") + 
+    abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+stimulusDelay],col="green")
+        
       dev.off()
-      datasummary = rbind( datasummary, 
-                     cbind( onepulse[1,which( names(onepulse) %in% summaryparameters)] ,
-                     parameters[which(names(parameters) %in% summaryparameters)] )
-                    ) 
-      write.csv(datasummary,"parameters_summary.csv",row.names = FALSE)
       
     } else if(answer == "n"){
       next
     }
-  }
-  files = files[-(which(files==f))]
+   }
+    else {
+              # calculate parameters
+      parameters = CalculateParameters(onepulse,stimdelay = stimulusDelay)
+      parameters[which(is.na(parameters)==TRUE)] <- 0
+      
+      
+              # plot trace
+      plot(onepulse$Time[from:to], 
+           onepulse$mV[from:to], 
+           main=savename, 
+           #ylim=c(-100,5),
+           cex=0.5,
+           type= "l") + 
+      abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+stimulusDelay],col="green")+
+      abline(v=parameters$peakdepolslope.time, col="magenta", lty=1)+
+      abline(v=parameters$tau.abstime, col="blue", lty=1)+
+      abline(h=parameters$peak.depol, col="magenta", lty=1)+
+      abline(h=parameters$ss.depol, col="red", lty=1) +
+      abline(h=parameters$tau.voltage, col="blue", lty=2)  
+      
+       print(parameters[c(5,6,7,8)])
+      ## Save stimulus trace
+      answer <- readline (prompt="Save plot and data? [y] to save, [n] to skip trace and not save ")
+      while ( nchar(answer)!=1 ){
+        print("No valid input, try again ")
+        answer <- readline (prompt="Save plot and data? [y] to save, [n] to skip trace and not save ")
+      }
+      if( answer == "y" ){
+        pdf(file = paste( batchfolder,"/PulsePlots/",savename,".pdf" , sep = "") )
+        
+          plot(onepulse$Time[from:to], 
+           onepulse$mV[from:to], 
+           main=savename, 
+           #ylim=c(-100,5),
+           cex=0.5 ,
+           type= "l") +
+        abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+stimulusDelay],col="green")+
+        abline(v=parameters$peakdepolslope.time, col="magenta", lty=1)+
+        abline(v=parameters$tau.abstime, col="blue", lty=1)+
+        abline(h=parameters$peak.depol, col="magenta", lty=1)+
+        abline(h=parameters$ss.depol, col="red", lty=1) +
+        abline(h=parameters$tau.voltage, col="blue", lty=2)  
+          
+        dev.off()
+        datasummary = rbind( datasummary, 
+                       cbind( i,
+                              petiol.state,
+                              onepulse$Leaf[1],
+                              onepulse$Stim[1],
+                              onepulse[1,which( names(onepulse) %in% summaryparameters)] ,
+                              parameters[which(names(parameters) %in% summaryparameters)] )
+                      ) 
+        write.csv(datasummary,"parameters_summary.csv",row.names = FALSE)
+        
+      } else if(answer == "n"){
+          next
+        }
+      }
+    }
+    files = files[-(which(files==f))]
+  } 
 }
 ```
 
 
 4'. Dose-Response (time vs amplitude) Calculate parameters
 input   -  >savename.RData< traces divided by duration and electrode.
-output  - datasummary.csv file with all the parameters for each stimulus
+output  - datasummary.csv file with all the parameters for each stimulus just for electrode 1
 ```{r}
 setwd(batchfolder)
 datasummary = NULL
@@ -495,43 +647,71 @@ for( f in grep("RData",list.files()) ){ # go through the lists of the different 
   load(list.files()[f])
   savename = list.files()[f] %>% substr(1,nchar(list.files()[f])-6)
   for(i in 1:length(trace.segmented) ) { # loop through the stim times
-    print(names(trace.segmented)[i])
-    print( as.numeric( strsplit(names(trace.segmented)[i],split = " ")[[1]][1] ) )
-    for(j in 1:length(trace.segmented[[i]]) ){
-      print( names(trace.segmented[[i]][j]) )
+    #print(names(trace.segmented)[i])
+    #print( as.numeric( strsplit(names(trace.segmented)[i],split = " ")[[1]][1] ) )
+    head(trace.segmented[[i]]$'1') ## this might not work for both electrodes
 
-      one.stimulus = cbind( "stim.duration.ms." =  as.numeric( strsplit(names(trace.segmented)[i],split = " ")[[1]][1] )  ,
-                          "electrode" = names(trace.segmented[[i]])[j],
-                          "stimulus" = trace.segmented[[i]][[j]]$Stim[1] , 
-                          data.frame( CalculateParameters( trace.segmented[[i]][[j]],stimdelay=200) ),
-                          "genotype" = trace.segmented[[i]][[j]]$Genotype[1]
-      )
-      plot(trace.segmented[[i]][[j]]$Time[one.stimulus$stimon:one.stimulus$stimoff], trace.segmented[[i]][[j]]$mV[one.stimulus$stimon:one.stimulus$stimoff],
-           main = paste(savename,"_",names(trace.segmented)[i],"_electrode",j, sep = "" )   )
-      
-      plot.title = paste(savename,"_",
-                         one.stimulus$stim.duration.ms.[1],"ms_",
-                         one.stimulus$leaf[1],"_",
-                         "electrode",j,
-                         sep = "" )
-      Sys.sleep(0.5)
-      pdf(file= paste(batchfolder,"/PulsePlots/",plot.title,".pdf",sep=""))
-      plot(trace.segmented[[i]][[j]]$Time, trace.segmented[[i]][[j]]$mV,
-           main = plot.title ,
-           cex=0.5   ) +
-        abline(h=one.stimulus$peak.depol, col="red") +
-        abline(v=one.stimulus$peakdepol.time, col="red", lty=2) +
-        abline(v=one.stimulus$tau.abstime, col="blue", lty=2) +
-        abline(v=c(trace.segmented[[i]][[j]]$Time[one.stimulus$stimon],
-                   trace.segmented[[i]][[j]]$Time[one.stimulus$stimoff]), 
-               col="black") 
-        dev.off()
-      
-      
-      datasummary = rbind(datasummary, one.stimulus)
-    }
+    one.stimulus = cbind( "stim.duration.ms." =  as.numeric( strsplit(names(trace.segmented)[i],split = " ")[[1]][1] )  ,
+                        "electrode" = trace.segmented[[i]]$'1'$electrode[1],
+                        "stimulus" = trace.segmented[[i]]$'1'$Stim[1] , 
+                        data.frame( CalculateParameters( trace.segmented[[i]]$'1',stimdelay=0) ),
+                        "genotype" = trace.segmented[[i]]$'1'$Genotype
+                        
+    )
+        
+    
+    
+    
+    #### ACA VA. algo no funciona con calculate parameters!!
+    
+    
+    
+    
+    if(is.null(trace.segmented[[i]][[j]]$Treatment[1]) == FALSE ){
+      one.stimulus = cbind(one.stimulus,
+                           "treatment" = trace.segmented[[i]][[j]]$Treatment[1],
+                           "time.treatment" = trace.segmented[[i]][[j]]$Treatment.time[1])
+    } 
+    
+    #plot the stim segment
+    # plot(trace.segmented[[i]][[j]]$Time[one.stimulus$stimon:one.stimulus$stimoff], trace.segmented[[i]][[j]]$mV[one.stimulus$stimon:one.stimulus$stimoff],
+    #      main = paste(savename,"_",names(trace.segmented)[i],"_electrode",j, sep = "" )   )
+    plot.title = paste(savename,"_",
+                       one.stimulus$stim.duration.ms.[1],"ms_",
+                       one.stimulus$leaf[1],"_",
+                       "electrode",j,
+                       sep = "" )
+    plot(trace.segmented[[i]][[j]]$Time, trace.segmented[[i]][[j]]$mV,
+         main = plot.title ,
+         cex=0.5   ) +
+      abline(h=one.stimulus$peak.depol, col="red") +
+      abline(v=one.stimulus$peakdepolslope.time, col="green", lty=2) +
+      abline(v=one.stimulus$peakdepol.time, col="red", lty=2) +
+      abline(v=one.stimulus$tau.abstime, col="blue", lty=2) +
+      abline(v=c(trace.segmented[[i]][[j]]$Time[one.stimulus$stimon],
+                 trace.segmented[[i]][[j]]$Time[one.stimulus$stimoff]), 
+             col="black") 
+    # now save that plot
+   
+    Sys.sleep(0.5)
+    pdf(file= paste(batchfolder,"/PulsePlots/",plot.title,".pdf",sep=""))
+    plot(trace.segmented[[i]][[j]]$Time, trace.segmented[[i]][[j]]$mV,
+         main = plot.title ,
+         cex=0.5   ) +
+      abline(h=one.stimulus$peak.depol, col="red") +
+      abline(v=one.stimulus$peakdepolslope.time, col="green", lty=2) +
+      abline(v=one.stimulus$peakdepol.time, col="red", lty=2) +
+      abline(v=one.stimulus$tau.abstime, col="blue", lty=2) +
+      abline(v=c(trace.segmented[[i]][[j]]$Time[one.stimulus$stimon],
+                 trace.segmented[[i]][[j]]$Time[one.stimulus$stimoff]), 
+             col="black") 
+      dev.off()
+    
+    
+    datasummary = rbind(datasummary, one.stimulus)
   }
 }
+
 datasummary$position = "Distal"
 for( r in 1:nrow(datasummary)){
     if( length(grep(datasummary$electrode[r],datasummary$stimulus[r])) == 1 ){
@@ -542,15 +722,18 @@ for( r in 1:nrow(datasummary)){
 
 ```{r}
 setwd(batchfolder)
+datasummary$peakdepolslope.latency[which(datasummary$peakdepolslope.latency>=0.2)] = NaN
 write.csv(datasummary, "datasummary.csv", row.names = FALSE)
 setwd(home)
 ```
 
 
+5. Run statistics! Decide which ones you want to run
 
-5'. Plot the dose response curve from the datasummary.csv file from 4'
+
+5.0. Plot the dose response curve from the datasummary.csv file from 4'
 input   - datasummary.csv file with all the parameters for each stimulus
-output  -
+output  - Plot of calculated variables vs the duration of the stimulus in log scale
 ```{r}
 # Violin plot for each parameter calculated
 My_Theme =  theme(
@@ -567,83 +750,106 @@ My_Theme =  theme(
   panel.grid.minor.x = element_line()) 
 
 head(datasummary)
-
-ggplot(dplyr::filter(datasummary), aes(`stim.duration.ms.`, `peak.depol`, color = `position` )) +
+parameters2plot = c("peak.depol",
+                    "peakdepolslope.latency",
+                    "tau") 
+# "ss.depol",
+#                     "peakdepol.latency",
+#                     "peak.depol.slope",
+for( v in which(names(datasummary)%in%parameters2plot) ){
+figure <-   ggplot(dplyr::filter(datasummary), aes(`stim.duration.ms.`, datasummary[,v], color = `position` )) +
   geom_point(size = 3) +
   scale_x_continuous(trans='log10',
                      breaks=c(1,10,100,1000,10000) #trans_breaks('log10', function(x) 10^x),
                      ) +
   #xlim(c(1,5)) +
   xlab ("Stimulus duration ms - log10 scale") + 
-  ylab ("Peak depol (mV)") + 
-  ggtitle("Dose-response to stimulus duration. Power-1") +
+  ylab (names(datasummary)[v]) + 
+  ggtitle("Dose-response.Power-1") +
   My_Theme
+print(figure)
+#ggsave(paste(batchfolder,"/DoseResponse-",names(datasummary)[v],".pdf",sep = "") )
+}
 
-ggsave(paste(batchfolder,"DoseResponse-peak.depol.pdf",sep = "/"))
+
+
 setwd(home)
 ```
 
-
-5. Run statistics! Decide which ones you want to run
-
 5.1 Compare parameters between genotypes, positions or electrodes
-input   -   datasummary saved as "parameters_summary.csv"
-output  - "datastats.csv" with mean, SEM, shapiro, and whitney-mann tests for tau data. All that plotted and saved as  "tau_OnRecordingElectrode.pdf"
+input   -   datasummary.csv
+output  - "datastats.csv" with mean, SEM, shapiro, and whitney-mann tests for tau data. All that plotted and saved as Transmission-<variable>.pdf and Local.response-<variable>.pdf
 ```{r}
 setwd(batchfolder)
 # pick values where stimulus is applied on the recording electrode
 # onelectrode.data = datasummary %>% slice(which(datasummary$position %>% substr(2,2) %>% as.integer() == datasummary$electrode))
+# set position column
+datasummary = read.csv( "parameters_summary.csv" )
+position = c()
+for( i in 1:nrow(datasummary)) {
+  if ( length( grep( datasummary$electrode[i] ,  datasummary$`onepulse.Stim.1.`[i]) ) == 1 ){
+    position = append(position, "Local")
+  } else {
+    position = append(position, "Distal")
+  }
+}
+datasummary$position = position
 
 # run statistics on the tau, 
 parameters = c( "peak.depol",
-                "peakdepol.time" ,    
+                "peakdepol.latency" ,    
                 "peak.depol.slope"  ,  
-                "peakdepolslope.time" ,
-                "ss.depol"   ,        
+                "peakdepolslope.latency" ,
+                #"ss.depol"   ,        
                 "tau"       ,          
                 "tau.abstime"     ,    
                 "tau.voltage")
 
 datastats = NULL
-
-for(g in unique(datasummary$genotype) ){
+# statisticaly compare local to distal.
+for(g in unique(datasummary$Genotype) ){
     for(v in names(datasummary)[names(datasummary) %in% parameters ] ){
-      local.data = datasummary %>% dplyr::filter(genotype == g & 
-                                    position == "Local") %>%
+      first.data = datasummary %>% dplyr::filter(position == "Local" & 
+                                    i == 1) %>%
         select(all_of(v))
       
-      local.data = na.omit(local.data[,1])  
-      distal.data = datasummary %>% dplyr::filter(genotype == g & 
-                                    position == "Distal") %>%
+      first.data = na.omit(first.data[,1])  
+      
+      second.data = datasummary %>% dplyr::filter( position == "Distal" & 
+                                    i == 2) %>%
         select(all_of(v))
-      distal.data = na.omit(distal.data[,1])
+      second.data = na.omit(second.data[,1])
     
-      local.mean = local.data %>% mean() %>% round(2)
-      distal.mean = distal.data %>% mean() %>% round(2)
+      first.mean = first.data %>% mean() %>% round(2)
+      second.mean = second.data %>% mean() %>% round(2)
       
-      local.n = length(local.data)
-      distal.n = length(distal.data)
+      first.n = length(first.data)
+      second.n = length(second.data)
       
-      local.SEM = ((local.data %>% sd() ) / local.n)%>%round(2)
-      distal.SEM = ((distal.data %>% sd() ) / distal.n)%>%round(2)
+      first.SEM = ((first.data %>% sd() ) / first.n)%>%round(2)
+      second.SEM = ((second.data %>% sd() ) / second.n)%>%round(2)
       
-      local.shapiro = shapiro.test(local.data)$p.value%>%round(3)
-      distal.shapiro = shapiro.test(distal.data)$p.value%>%round(3)
+      first.shapiro = shapiro.test(first.data)$p.value%>%round(3)
+      second.shapiro = shapiro.test(second.data)$p.value%>%round(3)
       
-      WM = wilcox.test(local.data,distal.data)$p.value%>%round(3)
+      WM = wilcox.test(first.data,second.data)$p.value%>%round(4)
+      
+      T.tst = t.test(first.data,second.data)$p.value%>%round(4)
+    
       
       datastats = rbind(datastats,
                             data.frame("genotype"=g,
                                        "variable" = v,
-                                      local.mean,
-                                      distal.mean,
-                                      local.SEM,
-                                       distal.SEM,
-                                       local.n,
-                                       distal.n,
-                                       local.shapiro,
-                                      distal.shapiro,
-                                       "Whitney-Mann"=WM))
+                                     first.mean,
+                                      second.mean,
+                                      first.SEM,
+                                       second.SEM,
+                                      first.n,
+                                       second.n,
+                                      first.shapiro,
+                                      second.shapiro,
+                                       "Whitney-Mann"=WM,
+                                      "t.test"= T.tst))
   }
 }
 
@@ -662,34 +868,160 @@ My_Theme =  theme(
   panel.grid.major.y = element_blank(),
   panel.grid.minor.y = element_blank(),
   panel.grid.major.x = element_blank(), #element_line()
-  panel.grid.minor.x = element_blank()) 
+  panel.grid.minor.x = element_blank(),
+  panel.background =  element_blank()) 
+
+parameters2plot = c( "peak.depol",
+                #"peakdepol.latency"    
+                # "peak.depol.slope"  ,  
+                "peakdepolslope.time" ,
+                #"ss.depol"   ,        
+                "tau"       
+                )
+
+### DO specific analysis
 
 
-ggplot(dplyr::filter(datasummary, `position` == "Local"), #`stim.duration.ms.`>150
-       aes(`stimulus`, `peak.depol.slope`, color = `stim.duration.ms.`)) +
-  geom_violin(size = 1) +
+# compare local vs distal response in precut and postcut
+local.datasummary = dplyr::filter(datasummary, `position` == "Local" ) #  datasummary#dplyr::filter(datasummary, `position` == "Distal" ) #  dplyr::filter(datasummary, `position` == "Distal" ) #
+for(v in which(names(local.datasummary)%in%parameters2plot ) ){
+  n = nrow(dplyr::filter(local.datasummary, `onepulse.Leaf.1.` == "L13"))
+  petiole = local.datasummary %>% dplyr::filter( `onepulse.Leaf.1.` == "L13" ) %>%
+            select(all_of(names(datasummary)[v]))
+  petiole = petiole[,1]
+  leaf.base =  local.datasummary %>% dplyr::filter( `onepulse.Leaf.1.` == "L08" ) %>%
+        select(all_of(names(datasummary)[v])) 
+  leaf.base = leaf.base[,1]
+  
+  MW = wilcox.test(petiole,leaf.base)$p.value %>% round(3)
+  
+  
+  ggplot(local.datasummary, aes(`onepulse.Leaf.1.`, local.datasummary[,v])) +
+  geom_boxplot(linewidth = 1) +
   #geom_dotplot(binaxis='y', stackdir='center', position=position_dodge(0.9),dotsize=0.5,aes(fill=`Genotype`)) +
-  geom_jitter(shape=1, position=position_dodge(0.9), size = 3) +
-  #geom_label(data = datastats ,
-            #  aes(label = `Whitney.Mann`, y = Inf), inherit.aes = TRUE, 
-            # position=position_dodge(1), vjust = 1.5 ) +
-  ylab ("tau (s)") + 
-  ggtitle("535nm stimulus on Col-0:ACR1") +
+  geom_jitter(shape=1, position=position_dodge(0.9), size = 5, stroke = 0.7) +
+  #scale_colour_gradient(low="darkorchid1",high="limegreen") + 
+  stat_summary(fun="mean")+
+  stat_summary(fun.data=mean_se, geom="errorbar", color="black", width=0.1)+
+  ylab (names(local.datasummary)[v]) + 
+  #ylim(-90,0) +
+  ggtitle( paste("535nm on Col-0:ACR1 n=",n," MW p.val=",MW,sep="") ) +
   My_Theme
-ggsave("Propagation-tau.vs.position.pdf")
+  
+  ggsave( paste("Localleaf.response-",names(local.datasummary)[v],".pdf",sep = "") ) 
+} 
+
+# Compare local to distal recordings
+
+for(v in which(names(datasummary)%in%parameters2plot ) ){
+  n = nrow(dplyr::filter(datasummary, `position`=="Local"))
+  local.data = datasummary %>% dplyr::filter(`position`=="Local") %>%
+            select(all_of(names(datasummary)[v]))
+  local.data = local.data[,1]
+  distal.data =  datasummary %>% dplyr::filter(`position`== "Distal") %>%
+        select(all_of(names(datasummary)[v])) 
+  distal.data = distal.data[,1]
+  
+  MW = wilcox.test(local.data, distal.data)$p.value %>% round(3)
+
+  
+  ggplot(datasummary, aes(`position`, datasummary[,v], color = `stim.duration.ms.`)) +
+  geom_violin(linewidth = 1) +
+  #geom_dotplot(binaxis='y', stackdir='center', position=position_dodge(0.9),dotsize=0.5,aes(fill=`Genotype`)) +
+  geom_jitter(shape=1, position=position_dodge(0.9), size = 5, stroke = 0.7 ) +
+  scale_colour_gradient(low="darkorchid1",high="limegreen") +
+  stat_summary(fun="mean")+
+  stat_summary(fun.data=mean_se, geom="errorbar", color="black", width=0.1)+
+  ylab (names(datasummary)[v]) + 
+  ggtitle( paste("535nm on Col-0:ACR1 n=",n," MW p.val=",MW,sep="") ) +
+  My_Theme
+  
+  ggsave( paste("Transmission-",names(datasummary)[v],".pdf",sep = "") ) 
+}
 
 
 
-wilcox.test(  datasummary %>% dplyr::filter(genotype == g & 
-                                    stimulus == "S1") %>%
-        select(all_of("tau")),
-             datasummary %>% dplyr::filter(genotype == g & 
-                                        stimulus == "S2") %>%
-            select(all_of("tau"))
-        
-        )
+# Compare local to distal recordings w/o the first stimulus
+
+latter.datasummary = datasummary[ -(c(seq(1,nrow(datasummary),10),seq(2,nrow(datasummary),10))) ,]
+for(v in which(names(latter.datasummary)%in%parameters2plot ) ){
+  n = nrow(dplyr::filter(latter.datasummary, `position`=="Local"))
+  local.data = latter.datasummary %>% dplyr::filter(`position`=="Local") %>%
+            select(all_of(names(latter.datasummary)[v]))
+  local.data = local.data[,1]
+  distal.data =  latter.datasummary %>% dplyr::filter(`position`== "Distal") %>%
+        select(all_of(names(latter.datasummary)[v])) 
+  distal.data = distal.data[,1]
+  
+  MW = wilcox.test(local.data, distal.data)$p.value %>% round(3)
+
+  
+  ggplot(latter.datasummary, aes(`position`, latter.datasummary[,v], color = `stim.duration.ms.`)) +
+  geom_violin(linewidth = 1) +
+  #geom_dotplot(binaxis='y', stackdir='center', position=position_dodge(0.9),dotsize=0.5,aes(fill=`Genotype`)) +
+  geom_jitter(shape=1, position=position_dodge(0.9), size = 5, stroke = 0.7 ) +
+  scale_colour_gradient(low="darkorchid1",high="limegreen") +
+  stat_summary(fun="mean")+
+  stat_summary(fun.data=mean_se, geom="errorbar", color="black", width=0.1)+
+  ylab (names(latter.datasummary)[v]) + 
+  ggtitle( paste("535nm on Col-0:ACR1 n=",n," MW p.val=",MW,sep="") ) +
+  My_Theme
+  
+  ggsave( paste("Transmission.latterStim-",names(latter.datasummary)[v],".pdf",sep = "") ) 
+}
 
 ```
+
+5- tests for treatments data. average and compare parameters of responses over time.
+input   -   datasummary.csv
+output  - 
+```{r}
+# Violin plot for each parameter calculated
+My_Theme =  theme(
+  axis.text.x = element_text(color = "black", size = 20, angle = 0, hjust = 0.5, vjust = 0, face = "plain"),
+  axis.text.y = element_text(color = "black", size = 20, angle = 0, hjust = 0 , vjust = 0.5, face = "plain"),
+  axis.title.x = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), #element_blank(), #
+  axis.title.y = element_text(color = "black", size = 25, angle = 90, hjust = 0.5, vjust = 1, face = "plain"),
+  plot.title = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), # element_blank(), 
+  legend.text = element_text(size = 20),
+  legend.title = element_text(hjust = 0.1, size = 20),
+  panel.grid.major.y = element_blank(),
+  panel.grid.minor.y = element_blank(),
+  panel.grid.major.x = element_line(), #element_blank(), #element_line()
+  panel.grid.minor.x = element_line()) 
+
+head(datasummary)
+parameters2plot = c("peak.depol",
+                    "peak.depol.slope",
+                    "tau")
+for( v in which(names(datasummary)%in%parameters2plot) ){
+figure <-   ggplot(dplyr::filter(datasummary), aes(time.treatment, datasummary[,v], color = `position` )) +
+  geom_point(size = 3) +
+
+  #xlim(c(1,5)) +
+  xlab ("time after treatment (s)") + 
+  ylab (names(datasummary)[v]) + 
+  ggtitle(paste( unique(datasummary$treatment)[2]," treatment", " Power-1", sep="") ) +
+  My_Theme
+print(figure)
+ggsave(paste(batchfolder,"/Treatment-",names(datasummary)[v],".pdf",sep = "") )
+}
+
+# Group by time after treatment
+
+head(datasummary)
+datasummary %>% group_by(time.treatment) %>% summarise(mean(peak.depol))
+```
+
+
+
+
+
+
+
+
+
+___________
 
 5.2 Compare amplitude between electrodes
 input   - 
@@ -774,21 +1106,36 @@ My_Theme =  theme(
 By hand statistical tests:
 ```{r}
 
-dataset1 = datasummary %>% dplyr::filter(position == "Local" & 
-                                    stimulus == "S1") %>%
-        select(all_of("tau"))
+dataset1 = datasummary %>% dplyr::filter(stim.duration.ms. <= 100 & 
+                                    position == "Distal") %>%
+        select(all_of("peak.depol"))
 
-dataset2 =  datasummary %>% dplyr::filter(position == "Local"& 
-                                        stimulus == "S2") %>%
-            select(all_of("tau"))
+dataset2 =  datasummary %>% dplyr::filter(stim.duration.ms. > 5000 & 
+                                    position == "Distal") %>%
+        select(all_of("peak.depol"))
 
 dataset1 = na.omit(dataset1[,1])
 dataset2 = na.omit(dataset2[,1])
-shapiro.test(dataset2)$p %>% round(3)
+shapiro.test(dataset1)$p %>% round(3)
 
-test = data.frame( "p"= round(wilcox.test(dataset1, dataset2)$p.value,3),
-                   "W"= wilcox.test(dataset1, dataset2)$statistic
-)
-write.csv(file = "tau.vs.position-WM.csv", test)
+# non parametric
+test = wilcox.test(dataset1, dataset2)
+
+# parametric 
+test = t.test( dataset1, dataset2,
+       alternative = c("two.sided"),
+       mu = 0, paired = FALSE, var.equal = FALSE,
+       conf.level = 0.95 )
+
+#SAVE ALL STATS
+handMade.stats = data.frame( test$method,
+                             test$statistic,
+                             test$p.value,
+                             "firstStim-mean" = mean(dataset1),
+                             "firstStim-SEM" = sd(dataset1)/length(dataset1),
+                             "laterStims-mean" = mean(dataset2),
+                             "laterStims-SEM" = mean(dataset2))
+
+write.csv(file = "DoseResponse-peak.depol-StatsDistal.csv", handMade.stats, row.names = FALSE)
 ```
 

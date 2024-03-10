@@ -23,6 +23,7 @@ library(dplyr)
 library(signal)
 library(scales)
 library(plotrix)
+library(stats)
 # Functions
 PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)), extraInfo = "" ){
   ## Theme...
@@ -41,7 +42,7 @@ PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)), extraInfo = "" )
   ##
   
   tracePlot <- trace %>% dplyr::filter(`Time` > from & `Time` < to ) %>% 
-    ggplot(aes(`Time`, `mV`, color = `electrode`)) +
+    ggplot(aes(`Time`, `V`, color = `electrode`)) +
     geom_point(size = 0.5) +
     guides(color = guide_legend(override.aes = list(size = 3) )) +
     geom_vline(xintercept = stimTimes[ which(stimTimes>from & stimTimes<to) ], linewidth = 0.1 ) + #Make vertical lines the data point immediately after the stimulus pedal was hit. And that are inside the plotting time range.
@@ -62,7 +63,7 @@ NormalizeBaseline <- function(trace, normTime = 0 ){
   for(i in c(3:ncol(trace)) ){
     trace[,i] = trace[,i]-trace[stimIndex,i]
   } # Normalize the trace w/ the baseline. make all start at zero.
-  trace = gather(trace, "electrode", "mV", 3:ncol(trace)) # change structure for ggplot management
+  trace = gather(trace, "electrode", "V", 3:ncol(trace)) # change structure for ggplot management
   return(trace)
 } ## INPUT trace spreaded i.e. each electrode as column. Won't work if data is not at 10Hz samplerate. Output: normalized, gathered trace for plotting.
 CalculateParameters <- function(trace, stimdelay = 0){
@@ -113,7 +114,7 @@ CalculateParameters <- function(trace, stimdelay = 0){
 } # input. dataframe for one pulse on one electrode 
 CheckSampleRate <- function(trace){
   sampleRate = round(60/trace$Time[60],1) # 60 samples in x seconds that ran in the first 60 samples. (Hz)
-  if(round(sampleRate) <= 10){
+  if(round(sampleRate) < 10){
     print("ERROR! sample rate is not 10Hz. Quantification won't work")
   } else {
     print("Good! The sample rate is: ")
@@ -358,7 +359,7 @@ findSWPvalues <- function(trace, plant=1){
   maxDepol = min(   na.omit( trace[ stimFrame:length(trace) ] )   ) # find peak depol. It's extracellular recording, so depol goes to negative
   
   depolFrame = which(trace == maxDepol) # Find frame at maximum depol 
-  
+  depolTime = depolFrame - stimFrame
   
   
                         ### hyperpol.amplitude1
@@ -432,6 +433,7 @@ findSWPvalues <- function(trace, plant=1){
   SWPvalues = data.frame(
   bl,
   maxDepol,
+  depolTime,
   hyperpol.amplitude1,
   max.hyperpol.rate,
   max.slope.frame,
@@ -466,7 +468,7 @@ plotAndAnalyze <- function(genotypeFile){
   Leaf = c()
 #### filter to get to one single plant
   subSet0 = dplyr::filter(ALLtraces,Plot == "No") 
-  for (datei in unique(subSet0$Date)){ # pick one date
+  for (datei in unique(subSet0$Date)  ){ # pick one date
     subSet1 = dplyr::filter(subSet0, Date == datei)
     # create folder if it doesn't exist
     if( dir.exists(paste( savename,"-",datei,sep = ""))==FALSE ){
@@ -490,7 +492,7 @@ plotAndAnalyze <- function(genotypeFile){
           # Trim or not
           answer <- readline (prompt="Trim trace? Second+ENTER, just ENTER to skip trimming, or >n< for skipping & erasing trace  ")
           if(nchar(answer)>0){
-            if(answer == "n"){
+            if( answer == "n" ){
               print("Trace not saved")
               #### Erase the trace is not saved!
               traceIndeces = which(ALLtraces$Date == datei & 
@@ -512,7 +514,7 @@ plotAndAnalyze <- function(genotypeFile){
             
           }  
       
-          
+          plot(trace$Time,trace$V)
   ### FUNCTION TO CALCUATE PARAMETERS         
           SWPanalysis = findSWPvalues(trace$V)
           trace = na.omit(trace)
@@ -532,6 +534,7 @@ plotAndAnalyze <- function(genotypeFile){
             abline(v = SWPvalues$max.slope.frame, col="red") +
             abline(v = SWPvalues$halfRepolframe, col="green") +
             abline(h = SWPvalues$maxDepol, col = "red") +
+            abline(v = SWPvalues$depolTime, col = "red") +
             abline(h = SWPvalues$maxHyperpol, col = "blue") +
             abline(h = SWPvalues$maxRepol, col = "blue") +
             abline(h = SWPvalues$bl2, col="green", lty = 2) +
@@ -584,6 +587,7 @@ plotAndAnalyze <- function(genotypeFile){
                 
                 abline(v = SWPvalues$halfRepolframe, col="green") +
                 abline(h = SWPvalues$maxDepol, col = "red") +
+                abline(v = SWPvalues$depolTime, col = "red") +
                 abline(h = SWPvalues$maxHyperpol, col = "blue") +
                 abline(h = SWPvalues$maxRepol, col = "blue") +
                 abline(h = SWPvalues$bl2, col="green", lty = 2) +
@@ -618,6 +622,12 @@ plotAndAnalyze <- function(genotypeFile){
   }
   return(fTraceSummary)
 }
+trimTrace <-function(trace, second){
+  trimFrame = which(trace$Time == second)
+  trace = trace[1:trimFrame,]
+  plot(trace$V, type="l")
+  return(trace)
+}
 downsample <- function(df){
   newIndeces = sort( 
       c( which(df$Time%%1==0), which(is.na(df$Time)==TRUE) ), 
@@ -643,8 +653,8 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "230615-analysis"
-date = 230615
+batchname = "compiled-analysis"
+date = 230706
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -653,7 +663,7 @@ if(file.exists(batchname)==FALSE){
 ```
 
 3. 
-input   - yyy_Export.txt files in the home folder. Information in electrode 1 column like this: E1_genotye_L#(leaf number)
+input   - yyy_Export.txt files in the home folder. Information in electrode 1 column like this: E1_genotye_L#(leaf number)_S#(where happens stimulus first)
 Output  - trace plot and .csv file with the trace dataframe.
 ```{r}
 setwd(home)
@@ -690,7 +700,7 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   # normalize and gather
   trace = NormalizeBaseline(trace, normTime = 1)
   # fix voltage units to mV
-  trace$V = trace$mV * 100
+  trace$V = trace$V * 100
   #
   ##
   ###
@@ -740,30 +750,88 @@ setwd(batchfolder)
 savename = list.files()[grep(".csv", list.files())]
 savename <- substr(savename,1,nchar(savename)-4)
 plotAndAnalyze(list.files()[grep(".csv", list.files())])
-
-
-setwd(home)
 ```
 
 
 5. Plot and run statistics on data parameters.
+Load data summary
+```{r}
+SummaryData = NULL
+for( i in grep("Summary", list.files()) ){
+  data = read.csv( list.files()[i] )
+  data$Genotype = substr(list.files()[i], 1, nchar(list.files()[i])-11 )
+  SummaryData = rbind(SummaryData, data )
+}
+```
+
 5.1. pick parameters to run stats on
 ```{r}
-Parameters = c("hyperpol.amplitude1", 
+parameters = c("hyperpol.amplitude1", 
                "depol.amplitude",
+               "maxDepol",
+               "depolTime",
                "min.depol.rate",
                "max.hyperpol.rate",
                "repol.amplitude", 
-               "bl2",
                "depDur",
                "hyperpol.duration",
-               "HalfDepolframe")
+               "HalfDepolframe",
+               "halfRepolframe")
+
+datastats = NULL
+for(g in unique(SummaryData$Genotype) ){
+    for(v in names(SummaryData)[names(SummaryData) %in% parameters ] ){
+      local.data = SummaryData %>% dplyr::filter(Genotype == g & 
+                                    Electrode == 1) %>%
+        select(all_of(v))
+      
+      local.data = na.omit(local.data[,1])  
+      distal.data = SummaryData %>% dplyr::filter(Genotype == g & 
+                                    Electrode == 2) %>%
+        select(all_of(v))
+      distal.data = na.omit(distal.data[,1])
+    
+      local.mean = local.data %>% mean() %>% round(2)
+      distal.mean = distal.data %>% mean() %>% round(2)
+      
+      local.n = length(local.data)
+      distal.n = length(distal.data)
+      
+      local.SEM = ((local.data %>% sd() ) / local.n)%>%round(2)
+      distal.SEM = ((distal.data %>% sd() ) / distal.n)%>%round(2)
+      
+      local.shapiro = shapiro.test(local.data)$p.value%>%round(3)
+      distal.shapiro = shapiro.test(distal.data)$p.value%>%round(3)
+      
+      WM = wilcox.test(local.data,distal.data)$p.value%>%round(3)
+      if(local.shapiro>=0.05 && distal.shapiro>=0.05){
+        t.tst = round(t.test(local.data, distal.data)$p.value,3)
+      } else{
+        t.tst = NaN
+      }
+      
+      datastats = rbind(datastats,
+                            data.frame("genotype"=g,
+                                       "variable" = v,
+                                      local.mean,
+                                      distal.mean,
+                                      local.SEM,
+                                       distal.SEM,
+                                       local.n,
+                                       distal.n,
+                                       local.shapiro,
+                                      distal.shapiro,
+                                       "Whitney-Mann"=WM,
+                                      t.tst))
+  }
+}
+write.csv(datastats, file = paste(batchfolder,"/",savename,"datastats.csv",sep = "") )
 ```
 
 
 Plot and save one violin plot for each parameter quantified including all genotypes recorded.
 ```{r}
-setwd(batchFolder)
+setwd(batchfolder)
 # Open all the "Summary" files in the folder.
 SummaryData = NULL
 for( i in grep("Summary", list.files()) ){
