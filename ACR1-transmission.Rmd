@@ -135,7 +135,7 @@ CalculateParameters <- function(trace, stimdelay = 1){
 } # input. dataframe for one pulse on one electrode 
 CheckSampleRate <- function(trace){
   sampleRate = round(60/as.numeric(trace$Time[60]),1) # 60 samples in x seconds that ran in the first 60 samples. (Hz)
-  if(round(sampleRate) <= 10){
+  if(round(sampleRate) < 10){
     print("ERROR! sample rate is not 10Hz. Quantification won't work")
   } else {
     print("Good! The sample rate is: ")
@@ -329,7 +329,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "231030-Analysis"
+batchname = "240408-Analysis"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -372,14 +372,24 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   }
   stimulus = strsplit(metaData,"_")[[1]][grep("S",strsplit(metaData,"_")[[1]])]
   genotype = strsplit(metaData,"_")[[1]][2]
-
+  intensity = strsplit(metaData,"_")[[1]][grep("I",strsplit(metaData,"_")[[1]])]
+  intensity = substr(intensity,2,3)
+  if ( grep(".", intensity) == 1 ){
+    intensity = as.numeric(intensity) + 6
+  }
+  
+  ##### SEPARARRRRR! y poner la intensidad correcta
+  
+  
+  
+  
   electrodeNums = NULL## Save the number of the electrode
   for(i in  names(trace)[3:ncol(trace)] ){
     electrodeNums = append(electrodeNums, as.numeric( substr(i,2, 2) ))
   }
   names(trace)[3:ncol(trace)] = electrodeNums # Make the columns' names numeric variables
   # Select just few electrodes.
-  pickElectrodes = c(1,2)#c(1,2)
+  pickElectrodes = c(1)#c(1,2)
   trace = trace[,c(1,2,which(names(trace)%in%pickElectrodes))]
   
   
@@ -396,7 +406,12 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   ###
   #### NORMALIZE TRACE and plot
   trace$Genotype = genotype
-  trace$Stim = stimulus
+  if( length(stimulus) > 0 ){
+     trace$Stim = stimulus
+  }
+  if( length(intensity) > 0 ){
+     trace$Intensity = intensity
+  }
   trace$Leaf = leaf
   trace$id = recording.id # esto de donde sale?? - un contador que incrementa en cada iteracion.
   PlotTrace(trace)
@@ -633,91 +648,50 @@ for(f in files){
 ```
 
 
-4'. Dose-Response (time vs amplitude) Calculate parameters
-input   -  >savename.RData< traces divided by duration and electrode.
-output  - datasummary.csv file with all the parameters for each stimulus just for electrode 1
+4'. Dose-Response (intensity vs amplitude) Calculate parameters
+input   -  >savename.RData< traces separated by pulses.
+output  - datasummary.csv file with all the intensities for the same plant.
 ```{r}
 setwd(batchfolder)
 datasummary = NULL
 if(file.exists( paste(batchfolder,"/PulsePlots",sep=""))==FALSE){
   dir.create( paste(batchfolder,"/PulsePlots",sep=""))
 }
+
+#load(list.files()[1])
+
+trace.compilation = NULL #data.frame( "Time" = trace.segmented[[1]]$'1'$Time)
+datasummary = NULL
+# Loop through all first traces. provisional!
 for( f in grep("RData",list.files()) ){ # go through the lists of the different experiment
   print(list.files()[f])
   load(list.files()[f])
-  savename = list.files()[f] %>% substr(1,nchar(list.files()[f])-6)
-  for(i in 1:length(trace.segmented) ) { # loop through the stim times
-    #print(names(trace.segmented)[i])
-    #print( as.numeric( strsplit(names(trace.segmented)[i],split = " ")[[1]][1] ) )
-    head(trace.segmented[[i]]$'1') ## this might not work for both electrodes
-
-    one.stimulus = cbind( "stim.duration.ms." =  as.numeric( strsplit(names(trace.segmented)[i],split = " ")[[1]][1] )  ,
-                        "electrode" = trace.segmented[[i]]$'1'$electrode[1],
-                        "stimulus" = trace.segmented[[i]]$'1'$Stim[1] , 
-                        data.frame( CalculateParameters( trace.segmented[[i]]$'1',stimdelay=0) ),
-                        "genotype" = trace.segmented[[i]]$'1'$Genotype
-                        
-    )
-        
-    
-    
-    
-    #### ACA VA. algo no funciona con calculate parameters!!
-    
-    
-    
-    
-    if(is.null(trace.segmented[[i]][[j]]$Treatment[1]) == FALSE ){
-      one.stimulus = cbind(one.stimulus,
-                           "treatment" = trace.segmented[[i]][[j]]$Treatment[1],
-                           "time.treatment" = trace.segmented[[i]][[j]]$Treatment.time[1])
-    } 
-    
-    #plot the stim segment
-    # plot(trace.segmented[[i]][[j]]$Time[one.stimulus$stimon:one.stimulus$stimoff], trace.segmented[[i]][[j]]$mV[one.stimulus$stimon:one.stimulus$stimoff],
-    #      main = paste(savename,"_",names(trace.segmented)[i],"_electrode",j, sep = "" )   )
-    plot.title = paste(savename,"_",
-                       one.stimulus$stim.duration.ms.[1],"ms_",
-                       one.stimulus$leaf[1],"_",
-                       "electrode",j,
-                       sep = "" )
-    plot(trace.segmented[[i]][[j]]$Time, trace.segmented[[i]][[j]]$mV,
-         main = plot.title ,
-         cex=0.5   ) +
-      abline(h=one.stimulus$peak.depol, col="red") +
-      abline(v=one.stimulus$peakdepolslope.time, col="green", lty=2) +
-      abline(v=one.stimulus$peakdepol.time, col="red", lty=2) +
-      abline(v=one.stimulus$tau.abstime, col="blue", lty=2) +
-      abline(v=c(trace.segmented[[i]][[j]]$Time[one.stimulus$stimon],
-                 trace.segmented[[i]][[j]]$Time[one.stimulus$stimoff]), 
-             col="black") 
-    # now save that plot
-   
-    Sys.sleep(0.5)
-    pdf(file= paste(batchfolder,"/PulsePlots/",plot.title,".pdf",sep=""))
-    plot(trace.segmented[[i]][[j]]$Time, trace.segmented[[i]][[j]]$mV,
-         main = plot.title ,
-         cex=0.5   ) +
-      abline(h=one.stimulus$peak.depol, col="red") +
-      abline(v=one.stimulus$peakdepolslope.time, col="green", lty=2) +
-      abline(v=one.stimulus$peakdepol.time, col="red", lty=2) +
-      abline(v=one.stimulus$tau.abstime, col="blue", lty=2) +
-      abline(v=c(trace.segmented[[i]][[j]]$Time[one.stimulus$stimon],
-                 trace.segmented[[i]][[j]]$Time[one.stimulus$stimoff]), 
-             col="black") 
-      dev.off()
-    
-    
-    datasummary = rbind(datasummary, one.stimulus)
-  }
+  print(trace.segmented[[1]]$'1'$Intensity[1] )
+  #savename = list.files()[f] %>% substr(1,nchar(list.files()[f])-6)
+  # normalize time to start at 0 for that pulse
+  trace.segmented[[1]]$'1'$Time = trace.segmented[[1]]$'1'$Time-trace.segmented[[1]]$'1'$Time[1]
+  ## ACA VOY!
+  # save the first pulse. organize as time, I1,I2...In,leaf,id,genotype
+  trace.compilation = rbind(trace.compilation, data.frame( "Time" = trace.segmented[[1]]$'1'$Time,
+                                                           "mV" = trace.segmented[[1]]$'1'$mV,
+                                                           "Intensity" = trace.segmented[[1]]$'1'$Intensity[1] ) )
+  
+  leaf = trace.segmented[[1]]$'1'$Leaf[1]
+  id = trace.segmented[[1]]$'1'$id[1]
+  genotype = trace.segmented[[1]]$'1'$Genotype[1]
+  
+  
+  plot( trace.segmented[[1]]$'1'$Time, trace.segmented[[1]]$'1'$mV,)
+  
+  datasummary = rbind(datasummary,
+                      cbind( as.data.frame( CalculateParameters( trace.segmented[[1]]$'1',stimdelay=0)),
+                       "leaf" = trace.segmented[[1]]$'1'$Leaf[1],
+                       "id" = trace.segmented[[1]]$'1'$id[1],
+                       "genotype" = trace.segmented[[1]]$'1'$Genotype[1] ) 
+                      ) 
 }
 
-datasummary$position = "Distal"
-for( r in 1:nrow(datasummary)){
-    if( length(grep(datasummary$electrode[r],datasummary$stimulus[r])) == 1 ){
-    datasummary$position[r] = "Local"
-  }
-}
+
 ```
 
 ```{r}
