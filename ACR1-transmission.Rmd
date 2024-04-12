@@ -27,6 +27,7 @@ library(signal)
 library(scales)
 library(stats)
 library(lubridate)
+library(stringr)
 # Functions
 PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)), extraInfo = "" ){
   ## Theme...
@@ -380,7 +381,7 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   } else {
     intensity = as.numeric(intensity)
   }
-
+  
   
   
   electrodeNums = NULL## Save the number of the electrode
@@ -649,7 +650,29 @@ for(f in files){
 
 
 4'. Dose-Response (intensity vs amplitude) Calculate parameters
-input   -  >savename.RData< traces separated by pulses.
+
+4.1
+Define the power of the different intensities with a dictionary. Then modify the >savename.RData< file in step 4.2
+```{r}
+intensity.values = c("0.5" = 0.03,
+                     "1" = 0.06,
+                     "2" = 0.13,
+                     "3" = 0.22,
+                     "4" = 0.48,
+                     "5" = 0.99,
+                     "6" = 1.19,
+                     "6.5" = 26.33,
+                     "7" = 52.63,
+                     "8" = 114.10,
+                     "9" = 186.8,
+                     "10" = 458.33,
+                     "11" = 881,
+                     "12" = 1047.67 )
+```
+
+
+4.2
+input   -  >savename.RData< traces separated by pulses, "intensity.values" variable defined in 4.1
 output  - datasummary.csv file with all the intensities for the same plant.
 ```{r}
 setwd(batchfolder)
@@ -667,12 +690,17 @@ for( f in grep("RData",list.files()) ){ # go through the lists of the different 
   print(list.files()[f])
   load(list.files()[f])
   print(trace.segmented[[1]]$'1'$Intensity[1] )
+  savename = substr(list.files()[f], 1, 6) 
   #savename = list.files()[f] %>% substr(1,nchar(list.files()[f])-6)
   # normalize time to start at 0 for that pulse
   trace.segmented[[1]]$'1'$Time = trace.segmented[[1]]$'1'$Time-trace.segmented[[1]]$'1'$Time[1]
   # normalize voltage to that 1 s before the pulse
   trace.segmented[[1]]$'1'$mV = trace.segmented[[1]]$'1'$mV - 
     trace.segmented[[1]]$'1'$mV[ which(trace.segmented[[1]]$'1'$TimeOfDay  == "F1")-10 ][1]
+  # plot and save that trace
+  pdf( paste(batchfolder,"/PulsePlots/",savename,".pdf",sep="") )
+  plot(trace.segmented[[1]]$'1'$Time , trace.segmented[[1]]$'1'$mV, "l")
+  dev.off()
   # save the first pulse. organize as time, I1,I2...In,leaf,id,genotype
   trace.compilation = rbind(trace.compilation, data.frame( "Time" = trace.segmented[[1]]$'1'$Time,
                                                            "mV" = trace.segmented[[1]]$'1'$mV,
@@ -693,15 +721,35 @@ for( f in grep("RData",list.files()) ){ # go through the lists of the different 
                              "Genotype" = trace.segmented[[1]]$'1'$Genotype[1] ) 
                       ) 
 }
-
+trace.compilation$Intensity = as.character(trace.compilation$Intensity)
+trace.compilation$Intensity = as.numeric( replace(trace.compilation$Intensity, trace.compilation$Intensity %in% names(intensity.values), intensity.values[trace.compilation$Intensity]) )
+datasummary$Intensity = as.character( datasummary$Intensity )
+datasummary$Intensity = as.numeric( replace(datasummary$Intensity , datasummary$Intensity  %in% names(intensity.values), intensity.values[datasummary$Intensity ]) )
+# save datasummary
+write.csv(datasummary, "Col0-1-datasummary.csv")
 
 ### Plot overlay of pulses
 ggplot( trace.compilation, aes(Time, mV, group = Intensity, color = Intensity) )+ #dplyr::filter(trace.compilation, Intensity==c(1,2))
   geom_line() + 
-  scale_color_gradient( low="black", high="darkolivegreen3") +
+  scale_color_gradient( low="black", high="darkorange") +
   # add stim:
-  geom_vline(xintercept = trace.compilation$Time [which( is.na(trace.compilation$Time) == TRUE )-1][1:2], color = "darkorange", linetype = "dashed" )
-
+  geom_vline(xintercept = trace.compilation$Time [which( is.na(trace.compilation$Time) == TRUE )+10][1:2], color = "darkolivegreen3", linetype = "dashed" ) +
+  labs (x = "seconds", color = "µW/mm2") + 
+  ggtitle( paste(datasummary$Genotype[1],datasummary$Leaf[1],datasummary$id[1] ) ) +
+  
+  theme(
+  axis.text.x = element_text(color = "black", size = 20, angle = 0, hjust = 0.5, vjust = 0, face = "plain"),
+  axis.text.y = element_text(color = "black", size = 20, angle = 0, hjust = 0 , vjust = 0.5, face = "plain"),
+  axis.title.x = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), #element_blank(), #
+  axis.title.y = element_text(color = "black", size = 25, angle = 90, hjust = 0.5, vjust = 1, face = "plain"),
+  plot.title = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), # element_blank(), 
+  legend.text = element_text(size = 20),
+  legend.title = element_text(hjust = 0.1, size = 20),
+  panel.grid.major.y = element_blank(),
+  panel.grid.minor.y = element_line(),
+  panel.grid.major.x = element_blank(), #element_blank(), #element_line()
+  panel.grid.minor.x = element_blank()) 
+ggsave("Col0-1.pdf")
 
 
 ```
