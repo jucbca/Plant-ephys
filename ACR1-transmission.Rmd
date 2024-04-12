@@ -283,12 +283,12 @@ segment.stimuli <- function(tracein, stimdelay = 0, minylim = -100){
     bothelectrodes = NULL
     for ( e in unique(tracein$electrode) ){
       trace.e = dplyr::filter(tracein, electrode==e)
-        if ( s == 1 ){
+        if ( s == 1 ){ # pick different lengths depending of the order of the pulse
         trace.singlestim = trace.e[ (stimuli[1]-(2*sample.rate)) : stimuli[3], ]
       } else if ( s == length(stimuli)-1 ) { # last stimulus. last s to end
         trace.singlestim = trace.e[ (stimuli[s]-(2*sample.rate)) : nrow(trace), ]
       } else { # all the rest
-        trace.singlestim = trace.e[ (stimuli[s]-(2*sample.rate)) : (stimuli[s+1]+(5*sample.rate)),]
+        trace.singlestim = trace.e[ (stimuli[s]-(2*sample.rate)) : (stimuli[s+2]-(1*sample.rate)) ,] # +(5*sample.rate) # this determined length of trace extracted
       }
       plot(trace.singlestim$Time, trace.singlestim$mV, type="l", ylim=rev(c(5,minylim)) ) +
       abline(v = tracein$Time[ c(stimuli[s],stimuli[s+1])+stimdelay ], col="red") +
@@ -330,7 +330,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "240408-Analysis"
+batchname = "240411-Analysis"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -377,9 +377,9 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   intensity = substr(intensity,2,3)
   intSplit = strsplit(intensity, "")
   if ( intSplit[[1]][2] == "." ){
-    intensity = as.numeric(intensity) + 6
+    intensity = 6 #as.numeric(intensity) + 6. ### Change if each pulse is in a file
   } else {
-    intensity = as.numeric(intensity)
+    intensity = 0 # as.numeric(intensity)
   }
   
   
@@ -669,67 +669,88 @@ intensity.values = c("0.5" = 0.03,
                      "11" = 881,
                      "12" = 1047.67 )
 ```
-
-
 4.2
 input   -  >savename.RData< traces separated by pulses, "intensity.values" variable defined in 4.1
 output  - datasummary.csv file with all the intensities for the same plant.
 ```{r}
 setwd(batchfolder)
-datasummary = NULL
 if(file.exists( paste(batchfolder,"/PulsePlots",sep=""))==FALSE){
   dir.create( paste(batchfolder,"/PulsePlots",sep=""))
 }
 
 #load(list.files()[1])
 
-trace.compilation = NULL #data.frame( "Time" = trace.segmented[[1]]$'1'$Time)
-datasummary = NULL
+trace.joint = NULL #data.frame( "Time" = trace.segmented[[1]]$'1'$Time)
 # Loop through all first traces. provisional!
 for( f in grep("RData",list.files()) ){ # go through the lists of the different experiment
   print(list.files()[f])
   load(list.files()[f])
-  print(trace.segmented[[1]]$'1'$Intensity[1] )
-  savename = substr(list.files()[f], 1, 6) 
-  #savename = list.files()[f] %>% substr(1,nchar(list.files()[f])-6)
-  # normalize time to start at 0 for that pulse
-  trace.segmented[[1]]$'1'$Time = trace.segmented[[1]]$'1'$Time-trace.segmented[[1]]$'1'$Time[1]
-  # normalize voltage to that 1 s before the pulse
-  trace.segmented[[1]]$'1'$mV = trace.segmented[[1]]$'1'$mV - 
-    trace.segmented[[1]]$'1'$mV[ which(trace.segmented[[1]]$'1'$TimeOfDay  == "F1")-10 ][1]
-  # plot and save that trace
-  pdf( paste(batchfolder,"/PulsePlots/",savename,".pdf",sep="") )
-  plot(trace.segmented[[1]]$'1'$Time , trace.segmented[[1]]$'1'$mV, "l")
-  dev.off()
-  # save the first pulse. organize as time, I1,I2...In,leaf,id,genotype
-  trace.compilation = rbind(trace.compilation, data.frame( "Time" = trace.segmented[[1]]$'1'$Time,
-                                                           "mV" = trace.segmented[[1]]$'1'$mV,
-                                                           "Intensity" = trace.segmented[[1]]$'1'$Intensity[1] ) )
-  
-  leaf = trace.segmented[[1]]$'1'$Leaf[1]
-  id = trace.segmented[[1]]$'1'$id[1]
-  genotype = trace.segmented[[1]]$'1'$Genotype[1]
-  
-  
-  #plot( trace.segmented[[1]]$'1'$Time, trace.segmented[[1]]$'1'$mV,)
-  
-  datasummary = rbind(datasummary,
-                      cbind( as.data.frame( CalculateParameters( trace.segmented[[1]]$'1',stimdelay=0)),
-                             "Intensity" = trace.segmented[[1]]$'1'$Intensity[1],
-                             "Leaf" = trace.segmented[[1]]$'1'$Leaf[1],
-                             "id" = trace.segmented[[1]]$'1'$id[1],
-                             "Genotype" = trace.segmented[[1]]$'1'$Genotype[1] ) 
-                      ) 
+  print(length(trace.segmented))
+  trace.joint = append( trace.joint, trace.segmented)
 }
-trace.compilation$Intensity = as.character(trace.compilation$Intensity)
-trace.compilation$Intensity = as.numeric( replace(trace.compilation$Intensity, trace.compilation$Intensity %in% names(intensity.values), intensity.values[trace.compilation$Intensity]) )
-datasummary$Intensity = as.character( datasummary$Intensity )
-datasummary$Intensity = as.numeric( replace(datasummary$Intensity , datasummary$Intensity  %in% names(intensity.values), intensity.values[datasummary$Intensity ]) )
+savename = substr(list.files()[f], 1, 5) 
+save(trace.joint, file = paste(batchfolder,"/",savename, "-joint.RData",sep = ""))
+
+
+
+# Set the intensities of all pulses. Increases every 4 pulses. and Pick each 4th pulse. and analyze!
+index4 = 1
+index.intensity = 1
+trace.compilation = NULL
+datasummary = NULL
+for( i in 1:(4*length(intensity.values)) ) {
+  print(index4)
+  trace.joint[[i]]$'1'$Intensity = intensity.values[index.intensity]
+  # keep 1st trace of that intensity for analysis
+  if ( index4 == 1){ 
+      # normalize time to start at 0 for that pulse
+    trace.joint[[i]]$'1'$Time = trace.joint[[i]]$'1'$Time-trace.joint[[i]]$'1'$Time[1]
+      # normalize voltage to that 1 s before the pulse
+    trace.joint[[i]]$'1'$mV = trace.joint[[i]]$'1'$mV - 
+      trace.joint[[i]]$'1'$mV[ which(trace.joint[[i]]$'1'$TimeOfDay  == "F1")-10 ][1]
+      # extract and save analyzed data
+    datasummary = rbind(datasummary,
+                    cbind( as.data.frame( CalculateParameters( trace.joint[[i]]$'1',stimdelay=0) ),
+                           "Intensity" = trace.joint[[i]]$'1'$Intensity[1],
+                           "Leaf" =trace.joint[[i]]$'1'$Leaf[1],
+                           "id" = trace.joint[[i]]$'1'$id[1],
+                           "Genotype" = trace.joint[[i]]$'1'$Genotype[1] ) 
+                    )
+      # plot pulse and save
+    pdf( paste(batchfolder,"/PulsePlots/",savename,"-",names(intensity.values)[index.intensity],".pdf",sep="") )
+      plot(trace.joint[[i]]$'1'$Time , trace.joint[[i]]$'1'$mV, "l") +
+        abline(h = datasummary$peak.depol[index.intensity], col="green" ) +
+        abline(v = datasummary$tau.abstime[index.intensity], col="red" ) +
+        abline(h = datasummary$tau.voltage[index.intensity], col="red" ) +
+        abline(v = (datasummary$stimon[index.intensity]/sample.rate), col="green" ) +
+        abline(v = (datasummary$stimoff[index.intensity]/sample.rate), col="green" ) 
+    dev.off()
+    trace.compilation = append( trace.compilation, 
+                                trace.joint[[i]] )
+    names(trace.compilation)[ length(trace.compilation) ] <-  intensity.values[index.intensity]
+    print(names(trace.compilation)[ length(trace.compilation) ] )
+  }
+  
+  index4 = index4 + 1
+  if(index4 > 4 ){ 
+    index4 = 1
+    index.intensity = index.intensity + 1 
+  }
+}
+
 # save datasummary
 write.csv(datasummary, "Col0-1-datasummary.csv")
 
 ### Plot overlay of pulses
-ggplot( trace.compilation, aes(Time, mV, group = Intensity, color = Intensity) )+ #dplyr::filter(trace.compilation, Intensity==c(1,2))
+trace.plot = data.frame()
+for( i in 1:length(trace.compilation)){
+  trace.plot = rbind(trace.plot,
+                     cbind("Time"=trace.compilation[[i]]$Time, 
+                           "mV" = trace.compilation[[i]]$mV, 
+                           "Intensity" = trace.compilation[[i]]$Intensity ))
+}
+
+ggplot( trace.plot, aes(Time, mV, group = Intensity, color = Intensity) )+ #dplyr::filter(trace.compilation, Intensity==c(1,2))
   geom_line() + 
   scale_color_gradient( low="black", high="darkorange") +
   # add stim:
@@ -749,17 +770,11 @@ ggplot( trace.compilation, aes(Time, mV, group = Intensity, color = Intensity) )
   panel.grid.minor.y = element_line(),
   panel.grid.major.x = element_blank(), #element_blank(), #element_line()
   panel.grid.minor.x = element_blank()) 
-ggsave("Col0-1.pdf")
+ggsave( paste( savename, ".pdf", sep = "" ) )
 
 
 ```
 
-```{r}
-setwd(batchfolder)
-datasummary$peakdepolslope.latency[which(datasummary$peakdepolslope.latency>=0.2)] = NaN
-write.csv(datasummary, "datasummary.csv", row.names = FALSE)
-setwd(home)
-```
 
 
 5. Run statistics! Decide which ones you want to run
