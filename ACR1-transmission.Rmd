@@ -374,13 +374,13 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   genotype = strsplit(metaData,"_")[[1]][2]
   intensity = strsplit(metaData,"_")[[1]][grep("I",strsplit(metaData,"_")[[1]])]
   intensity = substr(intensity,2,3)
-  if ( grep(".", intensity) == 1 ){
+  intSplit = strsplit(intensity, "")
+  if ( intSplit[[1]][2] == "." ){
     intensity = as.numeric(intensity) + 6
+  } else {
+    intensity = as.numeric(intensity)
   }
-  
-  ##### SEPARARRRRR! y poner la intensidad correcta
-  
-  
+
   
   
   electrodeNums = NULL## Save the number of the electrode
@@ -670,7 +670,9 @@ for( f in grep("RData",list.files()) ){ # go through the lists of the different 
   #savename = list.files()[f] %>% substr(1,nchar(list.files()[f])-6)
   # normalize time to start at 0 for that pulse
   trace.segmented[[1]]$'1'$Time = trace.segmented[[1]]$'1'$Time-trace.segmented[[1]]$'1'$Time[1]
-  ## ACA VOY!
+  # normalize voltage to that 1 s before the pulse
+  trace.segmented[[1]]$'1'$mV = trace.segmented[[1]]$'1'$mV - 
+    trace.segmented[[1]]$'1'$mV[ which(trace.segmented[[1]]$'1'$TimeOfDay  == "F1")-10 ][1]
   # save the first pulse. organize as time, I1,I2...In,leaf,id,genotype
   trace.compilation = rbind(trace.compilation, data.frame( "Time" = trace.segmented[[1]]$'1'$Time,
                                                            "mV" = trace.segmented[[1]]$'1'$mV,
@@ -681,15 +683,25 @@ for( f in grep("RData",list.files()) ){ # go through the lists of the different 
   genotype = trace.segmented[[1]]$'1'$Genotype[1]
   
   
-  plot( trace.segmented[[1]]$'1'$Time, trace.segmented[[1]]$'1'$mV,)
+  #plot( trace.segmented[[1]]$'1'$Time, trace.segmented[[1]]$'1'$mV,)
   
   datasummary = rbind(datasummary,
                       cbind( as.data.frame( CalculateParameters( trace.segmented[[1]]$'1',stimdelay=0)),
-                       "leaf" = trace.segmented[[1]]$'1'$Leaf[1],
-                       "id" = trace.segmented[[1]]$'1'$id[1],
-                       "genotype" = trace.segmented[[1]]$'1'$Genotype[1] ) 
+                             "Intensity" = trace.segmented[[1]]$'1'$Intensity[1],
+                             "Leaf" = trace.segmented[[1]]$'1'$Leaf[1],
+                             "id" = trace.segmented[[1]]$'1'$id[1],
+                             "Genotype" = trace.segmented[[1]]$'1'$Genotype[1] ) 
                       ) 
 }
+
+
+### Plot overlay of pulses
+ggplot( trace.compilation, aes(Time, mV, group = Intensity, color = Intensity) )+ #dplyr::filter(trace.compilation, Intensity==c(1,2))
+  geom_line() + 
+  scale_color_gradient( low="black", high="darkolivegreen3") +
+  # add stim:
+  geom_vline(xintercept = trace.compilation$Time [which( is.na(trace.compilation$Time) == TRUE )-1][1:2], color = "darkorange", linetype = "dashed" )
+
 
 
 ```
