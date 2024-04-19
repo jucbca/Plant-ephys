@@ -77,29 +77,31 @@ CalculateParameters <- function(trace, stimdelay = 1){
   stimon = which(trace$TimeOfDay=="F1")[1] + stimdelay 
   stimoff= which(trace$TimeOfDay=="F1")[2] + stimdelay 
   stimchunk = na.omit(trace[stimon:(stimoff*2),])
-   plot(stimchunk$Time, stimchunk$mV, type="p") +
-    abline(v=trace$Time[c(stimon,stimoff)],col="red")
+
+  
           # determine maximum -peak.depol-
   
-  #peak.depol =  min( stimchunk$mV )
-  # peakdepol.frame =  max(which(trace$mV==peak.depol)-1)
-  # peakdepol.time =  trace$Time[peakdepol.frame]
-  # peakdepol.latency = peakdepol.time - trace$Time[stimon]
+  peak.depol =  min( stimchunk$mV )
+  peakdepol.frame =  max(which(trace$mV==peak.depol)-1)
+  peakdepol.time =  trace$Time[peakdepol.frame]
+  peakdepol.latency = peakdepol.time - trace$Time[stimon]
+
           # determine mean V at last 500 ms of the stimulus -ss.depol-
-  stimchunk = na.omit(trace[stimon:stimoff,])
-  if (nrow(stimchunk)>=50 ){
+  stimchunk = na.omit(trace[stimon:stimoff,])    
+  # plot(stimchunk$Time, stimchunk$mV, type="p") +
+  #   abline(v=trace$Time[c(stimon,stimoff)],col="red") +
+  #   abline(h=peak.depol)
+
+  if ( nrow(stimchunk)>=50 ){
       ss.depol = mean( stimchunk$mV[(nrow(stimchunk)-50):nrow(stimchunk)] )
   }
 
   
   # in the chunk between onset of stimulus and peak.depol
   raisechunk = na.omit( trace[stimon:peakdepol.frame,] )
-  peak.depol =  min( raisechunk$mV )
-  peakdepol.frame =  max(which(trace$mV==peak.depol)-1)
-  peakdepol.time =  trace$Time[peakdepol.frame]
-  peakdepol.latency = peakdepol.time - trace$Time[stimon]
-  
-  plot(raisechunk$Time, raisechunk$mV, type="p") 
+  # plot(raisechunk$Time, raisechunk$mV, type="p") + abline(v=trace$Time[c(stimon,stimoff)],col="red")
+
+
             # determine max.depol.slope
   # apply filter to that chunk to avoid slope peaks from noice jumps
   raisechunk.slope = calculateslope( sgolayfilt(raisechunk$mV, p=1,n=9) )
@@ -112,8 +114,10 @@ CalculateParameters <- function(trace, stimdelay = 1){
   
   
   # in the chunk after end of stimulus.
-  decaychunk = na.omit(  trace[stimoff:nrow(trace),] )
-  #plot(decaychunk$Time,decaychunk$mV, type="l")
+  decaychunk = na.omit(  trace[(stimoff+stimdelay) :(5*sample.rate),] ) # from end of stimulus to 5 s after. or do until end of recording wih nrow(trace) 10*sample.rate
+  # gotta define the decaychunk as ending where it goes back to a maximum.
+  decaychunk = na.omit(  trace[(stimoff+stimdelay) :(which(decaychunk$mV == max(decaychunk$mV))+stimoff),] ) 
+  # plot(decaychunk$Time,decaychunk$mV, type="l")
           # determine time at 37% of peak.depol -tau-
   tau.voltage = round( peak.depol*0.37,2)
   tau.index = min(which( abs(decaychunk$mV- tau.voltage) == min( abs(decaychunk$mV- tau.voltage) ) ) + stimoff)
@@ -330,7 +334,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "240409-Analysis-2"
+batchname = "240418_Analysis-DoseResponse"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -345,7 +349,7 @@ if(file.exists(batchname)==FALSE){
 input   - yyy_Export.txt files in the home folder
 Output  - List >savename.RData< with all the separated pulses for that recording. Traces are saved in the list in their occurrence order
 ```{r}
-stimulusDelay = 0# the time between light onset and the computer making the mark.
+stimulusDelay = 1 # the time between light onset and the computer making the mark.
 ```
 
 ```{r}
@@ -504,7 +508,7 @@ save(trace.segmented, file = paste(batchfolder,"/",savename, ".RData",sep = ""))
 
 
 4. Analyze - calculate raising slope, peak depol, steady state depol, and tau.
-input   -  >genotype.RData< traces in the batch folder. The list is called "trace.segmented"
+input   -  >genotype.RData< traces in the batch folder. The list is called "trace.segmented". Analyze some or all the pulse in the file.
 output  - datasummary saved as "parameters_summary.csv" for each stimulus the calculated parameters, for all the electrodes in the file. 
   peak.depol - max depolarization
   peak.depol.slope - raising time of depolarization upon simulus
@@ -512,6 +516,12 @@ output  - datasummary saved as "parameters_summary.csv" for each stimulus the ca
   ss.depol - depolarization in the last second.
   tau - time at which voltage is 37% of the peak.depol after the stimulus ends.
 ```{r}
+## INPUT REQUIRED HERE!!
+# Analyze all pulses or just one of them?
+pulse.from = 1# start at which pulse?
+pulse.to = 1 # 1,2,3rd. input the number. or length(names(trace.segmented)) to do ALL.
+
+####
 setwd(batchfolder)
 if(file.exists( paste(batchfolder,"/PulsePlots",sep=""))==FALSE){
   dir.create( paste(batchfolder,"/PulsePlots",sep=""))
@@ -530,7 +540,7 @@ for(f in files){
   } 
   
   # loop through every one stimulus or pulse with all the available electrodes
-  for(i in 1:length(names(trace.segmented)) ){
+  for(i in pulse.from:pulse.to ){
     print(paste("stimulus #",i,"-",names(trace.segmented)[i]))
     # Loop through electrodes
     for(e in names(trace.segmented[[i]]) ){ #c(1) names(trace.segmented[[i]])
@@ -540,20 +550,20 @@ for(f in files){
       
       
     # fix time and V offset
-    onepulse$Time = onepulse$Time-onepulse$Time[which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay] # set the stimulus onset as time = 0 
+    onepulse$Time = onepulse$Time-onepulse$Time[which(onepulse$TimeOfDay=="F1")[1]+1+stimulusDelay] # set the stimulus onset as time = 0 
     onepulse$mV = onepulse$mV - mean(na.omit(onepulse$mV[1:(which(onepulse$TimeOfDay=="F1")[1]-10)]))  # set the voltage baseline as 0
     plot(onepulse$Time,onepulse$mV)+
   abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+1], col="red")
     
           # determine plot x limits
-      from = which(round(onepulse$Time,1)==(-0.1))[1]
+      from = which(round(onepulse$Time,1)==(-1))[1]
       to =  nrow(onepulse) #  which(round(onepulse$Time,1)== 10)[1] #  round(parameters$tau.abstime))[1]+100 #nrow( onepulse)
         #
      
     
 # if trace's absolut max peak is less than 2mV in amplitude:
    if( min( abs( onepulse$mV[which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay:
-                          which(onepulse$TimeOfDay=="F1")[2]+stimulusDelay] )*-1 ) - mean( onepulse$mV[1:which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay] ) > -0.1 ) {
+                          which(onepulse$TimeOfDay=="F1")[2]+stimulusDelay] )*-1 ) - mean( onepulse$mV[1:which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay] ) > -0.0001 ) {
  # plot
     plot(onepulse$Time[from:to], 
          onepulse$mV[from:to], 
@@ -597,14 +607,14 @@ for(f in files){
            #ylim=c(-100,5),
            cex=0.5,
            type= "l") + 
-      abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+stimulusDelay],col="green")+
+      abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+1+stimulusDelay],col="green")+
       abline(v=parameters$peakdepolslope.time, col="magenta", lty=1)+
       abline(v=parameters$tau.abstime, col="blue", lty=1)+
       abline(h=parameters$peak.depol, col="magenta", lty=1)+
       abline(h=parameters$ss.depol, col="red", lty=1) +
       abline(h=parameters$tau.voltage, col="blue", lty=2)  
       
-       print(parameters[c(5,6,7,8)])
+       print(parameters[c(1,5,6,7,8)])
       ## Save stimulus trace
       answer <- readline (prompt="Save plot and data? [y] to save, [n] to skip trace and not save ")
       while ( nchar(answer)!=1 ){
@@ -620,7 +630,7 @@ for(f in files){
            #ylim=c(-100,5),
            cex=0.5 ,
            type= "l") +
-        abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+stimulusDelay],col="green")+
+        abline(v=onepulse$Time[which(onepulse$TimeOfDay=="F1")+1+stimulusDelay],col="green")+
         abline(v=parameters$peakdepolslope.time, col="magenta", lty=1)+
         abline(v=parameters$tau.abstime, col="blue", lty=1)+
         abline(h=parameters$peak.depol, col="magenta", lty=1)+
@@ -632,7 +642,7 @@ for(f in files){
                        cbind( i,
                               petiol.state,
                               onepulse$Leaf[1],
-                              onepulse$Stim[1],
+                              #onepulse$Stim[1],
                               onepulse[1,which( names(onepulse) %in% summaryparameters)] ,
                               parameters[which(names(parameters) %in% summaryparameters)] )
                       ) 
@@ -647,6 +657,8 @@ for(f in files){
   } 
 }
 ```
+
+
 
 
 4'. Dose-Response (intensity vs amplitude) Calculate parameters
@@ -710,7 +722,7 @@ for( i in 1:(4*length(intensity.values)) ) {
       trace.joint[[i]]$'1'$mV[ which(trace.joint[[i]]$'1'$TimeOfDay  == "F1")-10 ][1]
       # extract and save analyzed data
     datasummary = rbind(datasummary,
-                    cbind( as.data.frame( CalculateParameters( trace.joint[[i]]$'1',stimdelay=0) ),
+                    cbind( as.data.frame( CalculateParameters( trace.joint[[i]]$'1',stimdelay=1) ),
                            "Intensity" = trace.joint[[i]]$'1'$Intensity[1],
                            "Leaf" =trace.joint[[i]]$'1'$Leaf[1],
                            "id" = trace.joint[[i]]$'1'$id[1],
