@@ -751,7 +751,7 @@ for( i in 1:(4*length(intensity.values)) ) {
 }
 
 # save datasummary
-write.csv(datasummary, "Col0-1-datasummary.csv")
+write.csv(datasummary, "Col0-1-datasummary.csv", row.names = FALSE)
 
 ### Plot overlay of pulses
 trace.plot = data.frame()
@@ -813,23 +813,25 @@ My_Theme =  theme(
 head(datasummary)
 parameters2plot = c("peak.depol",
                     "peakdepolslope.latency",
-                    "tau") 
+                    "tau",
+                    "peak.depol.slope") 
 # "ss.depol",
 #                     "peakdepol.latency",
 #                     "peak.depol.slope",
 for( v in which(names(datasummary)%in%parameters2plot) ){
-figure <-   ggplot(dplyr::filter(datasummary), aes(`stim.duration.ms.`, datasummary[,v], color = `position` )) +
+figure <-   
+  ggplot(dplyr::filter(datasummary), aes(`Intensity`, datasummary[,v], color = `Leaf` )) +
   geom_point(size = 3) +
   scale_x_continuous(trans='log10',
                      breaks=c(1,10,100,1000,10000) #trans_breaks('log10', function(x) 10^x),
                      ) +
   #xlim(c(1,5)) +
-  xlab ("Stimulus duration ms - log10 scale") + 
+  xlab ("log10 Power density 535nm light (µW/mm2)") + 
   ylab (names(datasummary)[v]) + 
-  ggtitle("Dose-response.Power-1") +
+  ggtitle("Dose-response") +
   My_Theme
 print(figure)
-#ggsave(paste(batchfolder,"/DoseResponse-",names(datasummary)[v],".pdf",sep = "") )
+ggsave(paste(home,"/DoseResponse-",names(datasummary)[v],".pdf",sep = "") )
 }
 
 
