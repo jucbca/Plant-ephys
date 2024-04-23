@@ -334,7 +334,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "240418_Analysis-DoseResponse"
+batchname = "240418_Analysis"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -787,9 +787,63 @@ ggsave( paste( savename, ".pdf", sep = "" ) )
 
 ```
 
+5'. Genetic background - ACR1 construct comparison.
+
+```{r}
+setwd(home)
+datasummary = read.csv( "KOlines.datasummary.csv" )
+# Comparte the following parameters 
+parameters = c( "peak.depol",    
+                "peak.depol.slope"  ,  
+                "peakdepolslope.latency" ,
+                "ss.depol"   ,        
+                "tau"       )
+# scatter plot for parameters comparing genotypes and ACR1 constructs
+head(datasummary)
+
+# organize genotype and ACR1 construct expressed
+genotype = c()
+acr1 = c()
+for(i in 1:nrow(datasummary)){
+  genotype = rbind( genotype,
+                    substr(datasummary$Genotype[i],1,(nchar(datasummary$Genotype[i])-4) )
+  )
+  acr1 = rbind(acr1, 
+               substr(datasummary$Genotype[i],(nchar(datasummary$Genotype[i])-2),nchar(datasummary$Genotype[i]))
+  )
+}
+datasummary$Genotype = genotype
+datasummary$ACR1 = acr1
+
+# plot now
+for(v in names(datasummary)[names(datasummary) %in% parameters ] ){
+  print(v)
+  plot <- ggplot(datasummary, aes(Genotype, datasummary[,v], color = ACR1)) +
+    geom_point(position = position_jitter(0.2), size = 3 ) +
+    labs (y = v) + 
+    ggtitle( "530nm - 1050µW/mm2 - 1s" ) +
+    theme(
+    axis.text.x = element_text(color = "black", size = 20, angle = 0, hjust = 0.5, vjust = 0, face = "plain"),
+    axis.text.y = element_text(color = "black", size = 20, angle = 0, hjust = 0 , vjust = 0.5, face = "plain"),
+    axis.title.x = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), #element_blank(), #
+    axis.title.y = element_text(color = "black", size = 25, angle = 90, hjust = 0.5, vjust = 1, face = "plain"),
+    plot.title = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), # element_blank(), 
+    legend.text = element_text(size = 20),
+    legend.title = element_text(hjust = 0.1, size = 20),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_line(),
+    panel.grid.major.x = element_blank(), #element_blank(), #element_line()
+    panel.grid.minor.x = element_blank()) 
+  print(plot) 
+  ggsave( paste( "KOs-",v, ".pdf", sep = "" ) )
+}
+
+```
 
 
-5. Run statistics! Decide which ones you want to run
+
+
+ 5. Run statistics! Decide which ones you want to run
 
 
 5.0. Plot the dose response curve from the datasummary.csv file from 4'
@@ -847,7 +901,7 @@ setwd(batchfolder)
 # pick values where stimulus is applied on the recording electrode
 # onelectrode.data = datasummary %>% slice(which(datasummary$position %>% substr(2,2) %>% as.integer() == datasummary$electrode))
 # set position column
-datasummary = read.csv( "parameters_summary.csv" )
+datasummary = read.csv( "KOlines.datasummary.csv" )
 position = c()
 for( i in 1:nrow(datasummary)) {
   if ( length( grep( datasummary$electrode[i] ,  datasummary$`onepulse.Stim.1.`[i]) ) == 1 ){
@@ -1075,7 +1129,6 @@ ggsave(paste(batchfolder,"/Treatment-",names(datasummary)[v],".pdf",sep = "") )
 head(datasummary)
 datasummary %>% group_by(time.treatment) %>% summarise(mean(peak.depol))
 ```
-
 
 
 
