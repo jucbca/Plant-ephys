@@ -334,7 +334,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "240418_Analysis"
+batchname = "240422_Analysis"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -788,15 +788,17 @@ ggsave( paste( savename, ".pdf", sep = "" ) )
 ```
 
 5'. Genetic background - ACR1 construct comparison.
+input - A "parameters_summary.csv" file with all analyzed statistics
+output- 
 
 ```{r}
 setwd(home)
-datasummary = read.csv( "KOlines.datasummary.csv" )
+datasummary = read.csv( "parameters_summary.csv" )
 # Comparte the following parameters 
 parameters = c( "peak.depol",    
                 "peak.depol.slope"  ,  
-                "peakdepolslope.latency" ,
-                "ss.depol"   ,        
+                #"peakdepolslope.latency" ,
+                #"ss.depol"   ,        
                 "tau"       )
 # scatter plot for parameters comparing genotypes and ACR1 constructs
 head(datasummary)
@@ -815,10 +817,13 @@ for(i in 1:nrow(datasummary)){
 datasummary$Genotype = genotype
 datasummary$ACR1 = acr1
 
+tst = datasummary
+datasummary = tst %>% dplyr::filter(ACR1 == c("026","030") ) 
 # plot now
 for(v in names(datasummary)[names(datasummary) %in% parameters ] ){
   print(v)
-  plot <- ggplot(datasummary, aes(Genotype, datasummary[,v], color = ACR1)) +
+  plot <- 
+    ggplot( datasummary, aes(Genotype, datasummary[,v], color = ACR1 ) ) +
     geom_point(position = position_jitter(0.2), size = 3 ) +
     labs (y = v) + 
     ggtitle( "530nm - 1050µW/mm2 - 1s" ) +
@@ -835,8 +840,9 @@ for(v in names(datasummary)[names(datasummary) %in% parameters ] ){
     panel.grid.major.x = element_blank(), #element_blank(), #element_line()
     panel.grid.minor.x = element_blank()) 
   print(plot) 
-  ggsave( paste( "KOs-",v, ".pdf", sep = "" ) )
+  ggsave( paste( "KOs_",v, ".pdf", sep = "" ) )
 }
+
 
 ```
 
