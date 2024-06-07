@@ -99,9 +99,9 @@ findSWPvalues <- function(time, trace, start.frame){
 
 
                         ### Initial baseline
-  bl = mean(trace[ 1:(start.frame-2)]) # average from 0 to before stimFrame
+  bl = mean(trace[ (start.frame-200):(start.frame-2)]) # average from 0 to before stimFrame
 
-  
+                        ### Depolarization peak
   ### Find peak depolarization
   maxDepol = min(   na.omit( trace[ start.frame:length(trace) ] )   ) # find peak depol. It's extracellular recording, so depol goes to negative
   
@@ -110,7 +110,7 @@ findSWPvalues <- function(time, trace, start.frame){
   
 
   
-       ### hyperpol.amplitude
+                      ### Hyperpol.amplitude
   ### Find peak of first hyperpolarization between stimulus and depol peak
   maxHyperpol = max(  na.omit(trace[ start.frame : depolFrame ])   )
   hyperpolFrame = min( which(trace == maxHyperpol) )# Find frame at maximum hyperpol
@@ -142,7 +142,7 @@ findSWPvalues <- function(time, trace, start.frame){
   
   
   
-                     ### find half maximum (bl to depol)
+                     ### find half maximum of depol (bl to depol)
   
   halfMaxDepol = bl - abs( (maxDepol - bl)/2 )
   halfMaxFrame = min( which( abs(depolTrace-halfMaxDepol) <= min(abs(depolTrace-halfMaxDepol)) ) ) + hyperpolFrame
@@ -151,16 +151,22 @@ findSWPvalues <- function(time, trace, start.frame){
   
 
                       ### max hyperpol rate
-  
   # focus on the chunk between max hyperpol an max depol
   hyperpolTrace = trace[start.frame: hyperpolFrame] # checks the trace 20s before the peak hyperpol. plot(hyperpolTrace)
   hyperpoltrace.firstderivative = calculateslope(hyperpolTrace) # plot(hyperpoltrace.firstderivative)
   max.hyperpol.rate = max(hyperpoltrace.firstderivative)
   ### Save time of max slope
   max.slope.frame = min( which(hyperpoltrace.firstderivative == max.hyperpol.rate) ) + start.frame
-  #  plot(hyperpolTrace) + abline(v=max.slope.frame) 
-  # plot(trace, type = "l") + abline(v=max.slope.frame) 
+  #  plot(hyperpolTrace) + abline(v= (max.slope.frame-start.frame) ) 
+  #  plot(trace, type = "l") + abline(v=max.slope.frame) 
   
+                       ### Hyperpol.halfmax
+  hyperpol.halfmax = bl + (hyperpol.amplitude/2)
+  # pick trace between start.frame and peak hyperpol frame
+  hyperpol.halfmax.frame = min( which( abs(hyperpolTrace-hyperpol.halfmax) <= min(abs(hyperpolTrace-hyperpol.halfmax)) ) ) + start.frame
+  #  plot(hyperpolTrace) + abline(v= (hyperpol.halfmax.frame-start.frame) ) 
+  #  plot(trace, type = "l") + abline(v=hyperpol.halfmax.frame)   
+
                       ### hyperpol.duration from max hyperpol slope to min depol slope
   
   hyperpol.duration = time[min.slope.frame] - time[max.slope.frame]
@@ -196,23 +202,24 @@ findSWPvalues <- function(time, trace, start.frame){
   SWPvalues = data.frame(
   bl,
   stimFrame,
+  # hyperpol
   max.hyperpol.rate,
   max.slope.frame,
-  maxHyperpol,
   hyperpol.amplitude,
   hyperpol.duration,
-  
+  hyperpol.halfmax,
+  hyperpol.halfmax.frame,
+  # depol
   min.depol.rate,
   min.slope.frame,
   halfMaxFrame,
   depolFrame,
-  maxDepol,
   depol.amplitude,
   depDur,
-  
-  maxRepol, 
+  # repol
   halfRepolframe,
   repol.amplitude,
+  maxRepolframe,
   
   bl2
  
@@ -297,13 +304,14 @@ xxxx should be changed to the genotype of the plant recorded. Any extra informat
 input - Manually write here specifications of the analysis
 output- creates a folder where to save all the analyzed files and plots
 ```{r}
-foldername = "230823-analysis"
+foldername = "231214-analysis"
 batchfolder = paste(home,foldername,sep = "/")
 #downsample.to = 100 # provide the Hz you want your data to be downsampled to. NULL for skip downsample.
 stim.time = 90 # seconds at which wound is done.
-# if ( !dir.exists(batchfolder) ){
-#   dir.create(batchfolder)
-# }
+if ( !dir.exists(batchfolder) ){
+  dir.create(batchfolder)
+}
+samplerate = 100
 ```
 
 
@@ -311,6 +319,8 @@ stim.time = 90 # seconds at which wound is done.
 /Users/j/Documents/GitHub/MCS_dataAnalysis/MCS_dataManager.py
 input   - All the ".h5" files in the home folder of this project.
 output  - a "Python-analysis" folder with ">savename<.csv" files with units s and mV.
+# run: python /Users/j/Documents/GitHub/MCS_dataAnalysis/MCS_dataManager.py
+
 
 # 1.3 Normalize to baseline, set array orientation, plot and save
 input   - The "Python-analysis" with ">savename<.csv" files from 1.2
@@ -387,7 +397,7 @@ for (f in files){
   traces.all$time =  traces.all$time - 90
   trace.plot = gather( na.omit(traces.all) , "e", "mV", 2:33)
   time = traces.all$time
-    # create folder fot this plant
+    # create folder for this plant
   plant_folder = paste(batchfolder,"/",substr(f,1,nchar(f)-4),"-plots",sep = "")
   if(dir.exists(plant_folder) == FALSE){
     dir.create( plant_folder )
@@ -404,8 +414,8 @@ for (f in files){
     print(electrode)
     trace = traces.all[,c]
       # determine the frame at 15 s prior to hyperpol peak
-    to =  which(trace == min(trace[(90*samplerate):length(trace)])) 
-    to = min( to[ which(to  > (90*samplerate) ) ] )
+    to =  which(trace == min(trace[(90*samplerate):length(trace)]) ) 
+    to =  min( to[ which(to  >= (90*samplerate) ) ] )
     from = which(trace[(to-(90*samplerate)):to] == max(trace[(to-(90*samplerate)):to]) ) + to-(105*samplerate) # start.frame = from
     plot(trace,type="l") + abline(h =  max(trace[(to-(90*samplerate)):to]) ) + abline(v= from )
     #  
@@ -493,7 +503,11 @@ img_animated
 # 3. Do heatmap for selected parameters and calculate correlation.
 Data is normalized to the minimum value for plotting. That makes the pattern better visualized. Correlation is unaffected by normalization.
 input   - The "array_SWPparameters.csv" files from 2.
-output  - ">parameter<.pdf" plots of the heatmaps of all the parameters. "spatial.correlation.csv" file with the spearman correlation test, to both MEA dimensions, for all parameters
+output  - 
+          Modified "array_SWPparameters.csv" with separated columns
+          "normalized_SWPparameters.csv" with all parameters normalized to the minimum for each plant.
+          "spatial.correlation.csv" with the spearman test rho and p-value for each parameter vs each axis of the array.
+          ">parameter<.pdf" plots of the heatmaps of all the parameters. "spatial.correlation.csv" file with the spearman correlation test, to both MEA dimensions, for all parameters
 ```{r}
 setwd(batchfolder)
 # Loop through all these parameters
@@ -501,19 +515,22 @@ parameter2plot = c("bl",
                    "hyperpol.amplitude",
                    "hyperpol.duration",
                    "max.slope.frame",
+                   "max.hyperpol.rate",
+                   "hyperpol.halfmax",
+                   "hyperpol.halfmax.frame",
+                   
                    
                    "depol.amplitude",
                    "depDur",
                    "min.depol.rate",
                    "min.slope.frame",
                    "halfMaxFrame",
-                   "depolFrame",
                    
                    "repol.amplitude",
                    "halfRepolframe",
                    
-                   "maxHyperpol",
-                   "maxRepol",
+                   "repol.amplitude",
+                   "halfRepolframe",
                    "bl2"
                    
                    )
@@ -716,31 +733,30 @@ setwd(home)
 #### Crunch all the data for one experiment. 
 
 # 5. put together all the calculated parameters for each genotype. get the mean or median? for each parameter in each electrode.
-input - IN THE HOME FOLDER! >genotype< folder with the "array_SWPparameters.csv" file of each plant
+input - IN THE HOME FOLDER! >genotype<-analysis folder with the "array_SWPparameters.csv" file of each plant
 output - A ">genotype<_CompiledParameters.RData" file with a list containing all the parameters of that genotype organized by electrode.
 ```{r}
 setwd(home)
-genotypes = c("col0","msl10-1"  , "slah3-3") #,,"slah3-3", "col0","msl10-1" "slah3-1",
+genotypes = c("slah3-3","slah3-1") #,,"slah3-3", "col0","msl10-1" "slah3-1",
 for (g in genotypes){
   folders = list.dirs()[grep(g, list.dirs())]
   # create list with an element for each electrode
   genotype_params = list() 
   for (f in folders[1:length(folders)]){
     setwd(f)
-    savename = substr(f, start = 3, stop = (nchar(f)-6))
+    savename = substr(f, start = 19, stop = nchar(f)-6 )
     print(savename)
     
     # HERE USE normalized data. makes plotting more clear and does not affect the correlation
-    array_SWPparameters = read.csv( "array_SWPparameters.csv" ) # "normalized_SWPparameters.csv"
-    ###
-    
-    array_SWPparameters = unite(array_SWPparameters, "electrode", 1:2) 
+    array_SWPparameters = read.csv( "normalized_SWPparameters.csv" ) #  "array_SWPparameters.csv"
+    #### use this next line to normalized data
+    array_SWPparameters = unite(array_SWPparameters, "electrode", 1:2)  
     # make a list. a dataframe for each electrode
     # loop through electrodes
     for(e in 1:32){
       #print( unique(array_SWPparameters$electrode)[e] )
       if ( !unique(array_SWPparameters$electrode)[e] %in% names(genotype_params) ){
-        # got it!! it is saving in which ever order and then changing the name. I assumed it'd always open the electrodes in the same order, but not!. now, how allocate data to a part of the list independently?
+        # got it!! it is saving in whichever order and then changing the name. I assumed it'd always open the electrodes in the same order, but not!. now, how allocate data to a part of the list independently?
         genotype_params$new =  cbind( array_SWPparameters[e,2:ncol(array_SWPparameters)], "plant"=savename)
         names(genotype_params)[ which(names(genotype_params) == "new") ] = unique(array_SWPparameters$electrode)[e]
       } else {
@@ -750,7 +766,7 @@ for (g in genotypes){
       }
     }
     setwd(home)
-    save(genotype_params, file = paste(g, "_CompiledParameters.RData",  sep="") )
+    save(genotype_params, file = paste(g, "_NormalizedCompiledParameters.RData",  sep="") )
   }
 }
 ```
@@ -876,7 +892,7 @@ for (f in files) {
 
 # 6.1 Generate scatter plot for all the data for each parameter vs. axial position.
 input - The >genotype<_normalizedCompiledParameters.RData files in the home folder.
-output -
+output - >parameter<_scatterpolot.pdf for each parameter.
 ```{r}
 setwd(home)
 files = list.files()[grep("RData", list.files())]
@@ -885,6 +901,8 @@ genotype_params_df = NULL
 # hace df con Value, Electrode, Parameter, Genotype
 for( f in files) {
     genotype = strsplit(f,split = "_")[[1]][1]
+    load(f)
+    print(genotype)
   for( e in names(genotype_params) ){
     print(e)
     for( p in which(names(genotype_params[[e]]) %in% parameter2plot) ){
@@ -903,11 +921,12 @@ genotype_params_df$Column = as.numeric(genotype_params_df$Column)
 
 for( p in unique(genotype_params_df$Parameter) ){
   plot.p <- 
-  ggplot( dplyr::filter(genotype_params_df, Parameter == p&Genotype=="col0"),
+  ggplot( dplyr::filter(genotype_params_df, Parameter == p), #&Genotype=="col0"
         aes(Column, Value, color = Genotype)) +
-    geom_point( position = position_jitter(0.2) ) +
+    geom_point( position = position_jitter(0.2) ) + 
     geom_smooth(aes(color=Genotype), fullrange = TRUE)+ #, se = FALSE
     ylab(p) +
+    #ylim(0,80)+
     scale_x_continuous(name="Electrode position", breaks=c(0:11)) +
     scale_color_manual(values=c('black','#E69F00', '#56B4E9')) +
     theme(
@@ -928,10 +947,8 @@ for( p in unique(genotype_params_df$Parameter) ){
 
 }
 
-
-
-head(genotype_params_df)
-
+# manually erase outliers. like durations above 150 s.
+#genotype_params_df[which(genotype_params_df$Parameter=="hyperpol.halfmax.frame"&genotype_params_df$Value>=3000),1] = NaN
 
 ```
 
@@ -1096,5 +1113,21 @@ ggplot( trace.plot, aes(time, mV, col=column) ) +
       panel.background = element_blank()) 
 
 ggsave("2023-12-14T16-18-16col0.pdf")
+```
+
+
+```{r}
+parameters = NULL
+for ( n in names(genotype_params) ){
+  print(n)
+  electrodeN = data.frame("depDur" = genotype_params[[which(names(genotype_params)==n)]]$depDur, 
+             "electrode" = n) 
+  parameters = rbind(parameters, electrodeN)
+}
+
+parameters = separate(parameters, electrode, c("row", "column") )
+write.csv(parameters, "depDur.csv", row.names = FALSE)
+
+
 ```
 

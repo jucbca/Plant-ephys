@@ -334,7 +334,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "240422_Analysis"
+batchname = "240514_Analysis"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -793,7 +793,7 @@ output-
 
 ```{r}
 setwd(home)
-datasummary = read.csv( "parameters_summary.csv" )
+datasummary = read.csv( "KOlines.datasummary.csv" )
 # Comparte the following parameters 
 parameters = c( "peak.depol",    
                 "peak.depol.slope"  ,  
@@ -814,11 +814,12 @@ for(i in 1:nrow(datasummary)){
                substr(datasummary$Genotype[i],(nchar(datasummary$Genotype[i])-2),nchar(datasummary$Genotype[i]))
   )
 }
-datasummary$Genotype = genotype
-datasummary$ACR1 = acr1
+datasummary$Genotype = as.vector( genotype )
+datasummary$ACR1 = as.vector( acr1 )
 
-tst = datasummary
-datasummary = tst %>% dplyr::filter(ACR1 == c("026","030") ) 
+datasummary = datasummary[-c(which(datasummary$ACR1=="001")),]  # tst
+#datasummary %>% dplyr::filter(ACR1 == c("026","030") ) 
+datasummary = datasummary[-c(which(datasummary$Genotype =="slah3.1")),]
 # plot now
 for(v in names(datasummary)[names(datasummary) %in% parameters ] ){
   print(v)
@@ -840,7 +841,7 @@ for(v in names(datasummary)[names(datasummary) %in% parameters ] ){
     panel.grid.major.x = element_blank(), #element_blank(), #element_line()
     panel.grid.minor.x = element_blank()) 
   print(plot) 
-  ggsave( paste( "KOs_",v, ".pdf", sep = "" ) )
+  ggsave( paste( "KOs-026.030_",v, ".pdf", sep = "" ) )
 }
 
 
