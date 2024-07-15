@@ -76,7 +76,11 @@ CalculateParameters <- function(trace, stimdelay = 1){
   trace$mV = abs(trace$mV)*-1
   stimon = which(trace$TimeOfDay=="F1")[1] + stimdelay 
   stimoff= which(trace$TimeOfDay=="F1")[2] + stimdelay 
-  stimchunk = na.omit(trace[stimon:(stimoff*2),])
+   # plot(trace$mV)+abline(v=stimon)+abline(v=stimoff)
+  stimchunk = na.omit(trace[stimon:(stimoff+10),])
+  # plot(stimchunk$mV)
+  
+ 
 
   
           # determine maximum -peak.depol-
@@ -98,7 +102,12 @@ CalculateParameters <- function(trace, stimdelay = 1){
 
   
   # in the chunk between onset of stimulus and peak.depol
-  raisechunk = na.omit( trace[stimon:peakdepol.frame,] )
+  if ( peakdepol.frame-stimon > 10 ){
+    raisechunk = na.omit( trace[stimon:peakdepol.frame,] )
+  } else {
+    raisechunk = na.omit( trace[stimon: (peakdepol.frame+10) ,] )
+  }
+  
   # plot(raisechunk$Time, raisechunk$mV, type="p") + abline(v=trace$Time[c(stimon,stimoff)],col="red")
 
 
@@ -287,7 +296,7 @@ segment.stimuli <- function(tracein, stimdelay = 0, minylim = -100){
     bothelectrodes = NULL
     for ( e in unique(tracein$electrode) ){
       trace.e = dplyr::filter(tracein, electrode==e)
-        if ( s == 1 ){ # pick different lengths depending of the order of the pulse
+        if ( s == 1 && length(stimuli)>2){ # pick different lengths depending of the order of the pulse
         trace.singlestim = trace.e[ (stimuli[1]-(2*sample.rate)) : stimuli[3], ]
       } else if ( s == length(stimuli)-1 ) { # last stimulus. last s to end
         trace.singlestim = trace.e[ (stimuli[s]-(2*sample.rate)) : nrow(trace), ]
@@ -334,7 +343,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "240514_Analysis"
+batchname = "240709_Analysis"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -386,7 +395,7 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
     intensity = 0 # as.numeric(intensity)
   }
   
-  
+
   
   electrodeNums = NULL## Save the number of the electrode
   for(i in  names(trace)[3:ncol(trace)] ){
@@ -394,7 +403,7 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   }
   names(trace)[3:ncol(trace)] = electrodeNums # Make the columns' names numeric variables
   # Select just few electrodes.
-  pickElectrodes = c(1)#c(1,2)
+  pickElectrodes = c(1,2)#c(1,2)
   trace = trace[,c(1,2,which(names(trace)%in%pickElectrodes))]
   
   
@@ -462,29 +471,38 @@ input   - List >savename.RData< with all the separated pulses of all for that re
 Output  - same file modified with treatment information
 ```{r}
 ## Modify according to experiment!
-treatment = "flg22-10mM"
-pulses.per.round = 3
+treatment = "Glu100mM"
+pulses.per.round = 1
 ```
 
 ```{r}
 setwd(batchfolder)
 # load data
-f = list.files()[grep(".RData", list.files()) ]
+
+f = list.files()[grep(".RData", list.files()) ][1]
+print(f)
 load( f )
 # label each pulse treatment and round.
-if(length(trace.segmented)%%pulses.per.round != 0){
+if( length(trace.segmented)%%pulses.per.round != 0 ){
   print("Number of traces not multiple of the pulses per round!")
 }
-for(i in c(1:3)){
+for(i in c(1:(pulses.per.round)) ){
   trace.segmented[[i]][[1]]$Treatment = "baseline"
   trace.segmented[[i]][[2]]$Treatment = "baseline"
   trace.segmented[[i]][[1]]$Treatment.time = 0
   trace.segmented[[i]][[2]]$Treatment.time = 0
 }
+for(i in c( (pulses.per.round+1)  : (pulses.per.round*2)  )){
+  trace.segmented[[i]][[1]]$Treatment = "cut"
+  trace.segmented[[i]][[2]]$Treatment = "cut"
+  trace.segmented[[i]][[1]]$Treatment.time = 0
+  trace.segmented[[i]][[2]]$Treatment.time = 0
+}
+
 time.initial = period_to_seconds(hms( trace.segmented[[1]][[1]]$TimeOfDay[1] )) 
-counter = 1
-for(i in c(4:length(trace.segmented)) ){
-  if(counter <= 3){
+counter = 1 # for what? - to count the pulses of the same round and give all the same time
+for(i in c((pulses.per.round*2+1):length(trace.segmented)) ){
+  if(counter <= pulses.per.round ){
     if(counter==1){
       time.pulse =round (period_to_seconds(hms(trace.segmented[[i]][[1]]$TimeOfDay[1])) -
         time.initial ,0 ) 
@@ -496,7 +514,7 @@ for(i in c(4:length(trace.segmented)) ){
     print(time.pulse)
     counter = counter + 1
   }
-  if(counter > 3){
+  if(counter > pulses.per.round){
     counter = 1
   }
 }
@@ -516,10 +534,8 @@ output  - datasummary saved as "parameters_summary.csv" for each stimulus the ca
   ss.depol - depolarization in the last second.
   tau - time at which voltage is 37% of the peak.depol after the stimulus ends.
 ```{r}
-## INPUT REQUIRED HERE!!
-# Analyze all pulses or just one of them?
-pulse.from = 1# start at which pulse?
-pulse.to = 1 # 1,2,3rd. input the number. or length(names(trace.segmented)) to do ALL.
+
+
 
 ####
 setwd(batchfolder)
@@ -532,6 +548,10 @@ datasummary = NULL
 for(f in files){
   load(f)
   print(f)
+  ## INPUT REQUIRED HERE!!
+    # Analyze all pulses or just one of them?
+  pulse.from = 1# start at which pulse?
+  pulse.to =length(names(trace.segmented)) # 1,2,3rd. input the number. or length(names(trace.segmented)) to do ALL.
   # separate stim info into columns
   # If there is cut information- save
   if( length(grep("cut",f)) != 0  ){
@@ -561,7 +581,7 @@ for(f in files){
         #
      
     
-# if trace's absolut max peak is less than 2mV in amplitude:
+# if trace's absolute max peak is less than 2mV in amplitude:
    if( min( abs( onepulse$mV[which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay:
                           which(onepulse$TimeOfDay=="F1")[2]+stimulusDelay] )*-1 ) - mean( onepulse$mV[1:which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay] ) > -0.0001 ) {
  # plot
@@ -644,7 +664,9 @@ for(f in files){
                               onepulse$Leaf[1],
                               #onepulse$Stim[1],
                               onepulse[1,which( names(onepulse) %in% summaryparameters)] ,
-                              parameters[which(names(parameters) %in% summaryparameters)] )
+                              parameters[which(names(parameters) %in% summaryparameters)],
+                              "treatment"=onepulse$Treatment[1],
+                              "treatment.time"=onepulse$Treatment.time[1])
                       ) 
         write.csv(datasummary,"parameters_summary.csv",row.names = FALSE)
         
@@ -1119,13 +1141,13 @@ parameters2plot = c("peak.depol",
                     "peak.depol.slope",
                     "tau")
 for( v in which(names(datasummary)%in%parameters2plot) ){
-figure <-   ggplot(dplyr::filter(datasummary), aes(time.treatment, datasummary[,v], color = `position` )) +
+figure <-   ggplot(dplyr::filter(datasummary), aes(treatment.time, datasummary[,v], color = `electrode` )) +
   geom_point(size = 3) +
 
   #xlim(c(1,5)) +
   xlab ("time after treatment (s)") + 
   ylab (names(datasummary)[v]) + 
-  ggtitle(paste( unique(datasummary$treatment)[2]," treatment", " Power-1", sep="") ) +
+  ggtitle(paste( unique(datasummary$treatment)[3]," treatment", " Power-6", sep="") ) +
   My_Theme
 print(figure)
 ggsave(paste(batchfolder,"/Treatment-",names(datasummary)[v],".pdf",sep = "") )
