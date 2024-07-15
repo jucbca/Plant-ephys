@@ -947,8 +947,33 @@ for( p in unique(genotype_params_df$Parameter) ){
 
 }
 
-# manually erase outliers. like durations above 150 s.
-#genotype_params_df[which(genotype_params_df$Parameter=="hyperpol.halfmax.frame"&genotype_params_df$Value>=3000),1] = NaN
+#head(genotype_params_df)
+parameters_correlation = NULL
+for(p in unique(genotype_params_df$Parameter) ) {
+  data.model = dplyr::filter(genotype_params_df, Parameter == p)
+  data.model$Value[which(data.model$Value==Inf)] = NaN
+  data.model = na.omit(data.model)
+  # Make linear model for all. Manually fit a better equation later.
+    # spearman correlation. Determines correlation between two variables. Can handle non normally distributed data and outliers. 
+  correlation <- cor.test(x= data.model$Column , y = data.model$Value, method="pearson" )
+  # rho. if squared is same as R2 of the linear regression
+  R2 = (correlation$estimate[[1]])^2
+  pval = correlation$p.value
+  
+  parameters_correlation = rbind(parameters_correlation,
+                                 data.frame("Parameter" = p,
+                                 "R2" = round(R2,4),
+                                 "p.value" = round(pval,4) ) 
+                                 )  
+}
+
+write.csv(parameters_correlation, "PearsonCoef.csv", row.names = FALSE)
+
+
+# manually erase outliers. like durations above 100 s.
+genotype_params_df[which(genotype_params_df$Parameter=="hyperpol.halfmax.frame"&
+                           genotype_params_df$Value>=3000),1] = NaN
+
 
 ```
 
