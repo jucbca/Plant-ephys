@@ -479,7 +479,7 @@ pulses.per.round = 1
 setwd(batchfolder)
 # load data
 
-f = list.files()[grep(".RData", list.files()) ][1]
+f = list.files()[grep(".RData", list.files()) ][3]
 print(f)
 load( f )
 # label each pulse treatment and round.
@@ -487,14 +487,14 @@ if( length(trace.segmented)%%pulses.per.round != 0 ){
   print("Number of traces not multiple of the pulses per round!")
 }
 for(i in c(1:(pulses.per.round)) ){
-  trace.segmented[[i]][[1]]$Treatment = "baseline"
+  trace.segmented[[i]][[1]]$Treatment = "baseline"# treatment# "petioleCut"   #
   trace.segmented[[i]][[2]]$Treatment = "baseline"
   trace.segmented[[i]][[1]]$Treatment.time = 0
   trace.segmented[[i]][[2]]$Treatment.time = 0
 }
 for(i in c( (pulses.per.round+1)  : (pulses.per.round*2)  )){
-  trace.segmented[[i]][[1]]$Treatment = "cut"
-  trace.segmented[[i]][[2]]$Treatment = "cut"
+  trace.segmented[[i]][[1]]$Treatment = "cut" # # "petioleCut" # 
+  trace.segmented[[i]][[2]]$Treatment = "cut" # 
   trace.segmented[[i]][[1]]$Treatment.time = 0
   trace.segmented[[i]][[2]]$Treatment.time = 0
 }
@@ -534,9 +534,6 @@ output  - datasummary saved as "parameters_summary.csv" for each stimulus the ca
   ss.depol - depolarization in the last second.
   tau - time at which voltage is 37% of the peak.depol after the stimulus ends.
 ```{r}
-
-
-
 ####
 setwd(batchfolder)
 if(file.exists( paste(batchfolder,"/PulsePlots",sep=""))==FALSE){
