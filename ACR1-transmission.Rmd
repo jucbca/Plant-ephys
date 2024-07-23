@@ -343,7 +343,7 @@ summaryparameters = c("Genotype",
 
 2. Create a batch folder
 ```{r}
-batchname = "240709_Analysis"
+batchname = "Output"
 batchfolder = paste(home,batchname,sep="/")
 setwd(home)
 if(file.exists(batchname)==FALSE){
@@ -362,6 +362,7 @@ stimulusDelay = 1 # the time between light onset and the computer making the mar
 ```
 
 ```{r}
+pickElectrodes = c(1)
 setwd(home)
 list.files()
 
@@ -403,7 +404,7 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   }
   names(trace)[3:ncol(trace)] = electrodeNums # Make the columns' names numeric variables
   # Select just few electrodes.
-  pickElectrodes = c(1,2)#c(1,2)
+  #pickElectrodes = c(1)#c(1,2)
   trace = trace[,c(1,2,which(names(trace)%in%pickElectrodes))]
   
   
@@ -459,9 +460,25 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
 
   
   
-      ##
-  recording.id = recording.id+1
-  setwd(home)
+  #     ##
+  # recording.id = recording.id+1
+  # setwd(home)
+
+  # last = max(which(trace$TimeOfDay=="F1")) 
+  # plot(trace$mV[last:nrow(trace)])
+  # 
+  # which(trace$mV[last:nrow(trace)] < (-12) )
+  # stim =last+   30520
+  # plot(trace$mV[(stim-1000):(stim+2000)]) +
+  #   abline(v=1000)
+  # 
+  # 
+  # 
+  # 
+  # trace$TimeOfDay[stim] = "F1"
+  ### write.csv(trace, "msl10-2.2.3.csv", row.names = FALSE)
+
+
 }
 ```
 
@@ -471,7 +488,7 @@ input   - List >savename.RData< with all the separated pulses of all for that re
 Output  - same file modified with treatment information
 ```{r}
 ## Modify according to experiment!
-treatment = "Glu100mM"
+treatment ="Glu100mM" # "petioleCut" # 
 pulses.per.round = 1
 ```
 
@@ -479,7 +496,7 @@ pulses.per.round = 1
 setwd(batchfolder)
 # load data
 
-f = list.files()[grep(".RData", list.files()) ][3]
+f = list.files()[grep(".RData", list.files()) ][1]
 print(f)
 load( f )
 # label each pulse treatment and round.
@@ -487,16 +504,16 @@ if( length(trace.segmented)%%pulses.per.round != 0 ){
   print("Number of traces not multiple of the pulses per round!")
 }
 for(i in c(1:(pulses.per.round)) ){
-  trace.segmented[[i]][[1]]$Treatment = "baseline"# treatment# "petioleCut"   #
-  trace.segmented[[i]][[2]]$Treatment = "baseline"
-  trace.segmented[[i]][[1]]$Treatment.time = 0
-  trace.segmented[[i]][[2]]$Treatment.time = 0
+  for (e in pickElectrodes){
+    trace.segmented[[i]][[e]]$Treatment = "baseline"#treatment##       #
+    trace.segmented[[i]][[e]]$Treatment.time = 0
+  }
 }
 for(i in c( (pulses.per.round+1)  : (pulses.per.round*2)  )){
-  trace.segmented[[i]][[1]]$Treatment = "cut" # # "petioleCut" # 
-  trace.segmented[[i]][[2]]$Treatment = "cut" # 
-  trace.segmented[[i]][[1]]$Treatment.time = 0
-  trace.segmented[[i]][[2]]$Treatment.time = 0
+    for (e in pickElectrodes){
+    trace.segmented[[i]][[e]]$Treatment = "cut" # treatment## "petioleCut" #
+    trace.segmented[[i]][[e]]$Treatment.time = 0
+  }
 }
 
 time.initial = period_to_seconds(hms( trace.segmented[[1]][[1]]$TimeOfDay[1] )) 
@@ -507,10 +524,10 @@ for(i in c((pulses.per.round*2+1):length(trace.segmented)) ){
       time.pulse =round (period_to_seconds(hms(trace.segmented[[i]][[1]]$TimeOfDay[1])) -
         time.initial ,0 ) 
     }
-    trace.segmented[[i]][[1]]$Treatment = treatment
-    trace.segmented[[i]][[2]]$Treatment = treatment
-    trace.segmented[[i]][[1]]$Treatment.time = time.pulse
-    trace.segmented[[i]][[2]]$Treatment.time = time.pulse
+    for (e in pickElectrodes){
+    trace.segmented[[i]][[e]]$Treatment = treatment
+    trace.segmented[[i]][[e]]$Treatment.time = time.pulse
+  }
     print(time.pulse)
     counter = counter + 1
   }
@@ -574,13 +591,12 @@ for(f in files){
     
           # determine plot x limits
       from = which(round(onepulse$Time,1)==(-1))[1]
-      to =  nrow(onepulse) #  which(round(onepulse$Time,1)== 10)[1] #  round(parameters$tau.abstime))[1]+100 #nrow( onepulse)
-        #
+      to = max( which(onepulse$TimeOfDay=="F1") ) + 200# #nrow(onepulse) #  which(round(onepulse$Time,1)== 10)[1] # 
      
     
 # if trace's absolute max peak is less than 2mV in amplitude:
-   if( min( abs( onepulse$mV[which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay:
-                          which(onepulse$TimeOfDay=="F1")[2]+stimulusDelay] )*-1 ) - mean( onepulse$mV[1:which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay] ) > -0.0001 ) {
+   if( min( abs(na.omit( onepulse$mV[which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay:
+                          which(onepulse$TimeOfDay=="F1")[2]+stimulusDelay] ))*-1 ) - mean( na.omit( onepulse$mV[1:which(onepulse$TimeOfDay=="F1")[1]+stimulusDelay] )) > -0.0001 ) {
  # plot
     plot(onepulse$Time[from:to], 
          onepulse$mV[from:to], 
@@ -663,7 +679,8 @@ for(f in files){
                               onepulse[1,which( names(onepulse) %in% summaryparameters)] ,
                               parameters[which(names(parameters) %in% summaryparameters)],
                               "treatment"=onepulse$Treatment[1],
-                              "treatment.time"=onepulse$Treatment.time[1])
+                              "treatment.time"=onepulse$Treatment.time[1]
+                              )
                       ) 
         write.csv(datasummary,"parameters_summary.csv",row.names = FALSE)
         
@@ -730,7 +747,6 @@ index.intensity = 1
 trace.compilation = NULL
 datasummary = NULL
 for( i in 1:(4*length(intensity.values)) ) {
-  print(index4)
   trace.joint[[i]]$'1'$Intensity = intensity.values[index.intensity]
   # keep 1st trace of that intensity for analysis
   if ( index4 == 1){ 
@@ -761,7 +777,7 @@ for( i in 1:(4*length(intensity.values)) ) {
     names(trace.compilation)[ length(trace.compilation) ] <-  intensity.values[index.intensity]
     print(names(trace.compilation)[ length(trace.compilation) ] )
   }
-  
+  print(index4)
   index4 = index4 + 1
   if(index4 > 4 ){ 
     index4 = 1
@@ -770,7 +786,7 @@ for( i in 1:(4*length(intensity.values)) ) {
 }
 
 # save datasummary
-write.csv(datasummary, "Col0-1-datasummary.csv", row.names = FALSE)
+write.csv(datasummary, paste(savename,"-datasummary.csv",sep=""), row.names = FALSE)
 
 ### Plot overlay of pulses
 trace.plot = data.frame()

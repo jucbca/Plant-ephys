@@ -23,7 +23,7 @@ PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)) ){
   
   tracePlot <- trace %>% dplyr::filter(`Time` > from & `Time` < to ) %>% 
     ggplot(aes(`Time`, `V`, color = `Electrode`)) +
-    geom_point(size = 0.5) +
+    geom_line(size = 0.5) +
     guides(color = guide_legend(override.aes = list(size = 3) )) +
     geom_vline(xintercept = stimTimes[ which(stimTimes>from & stimTimes<to) ], size = 0.1 ) + #Make vertical lines the data point immediately after the stimulus pedal was hit. And that are inside the plotting time range.
     ylab ("V") + 
@@ -115,7 +115,7 @@ trace = trace[,c(1,2,which(names(trace)%in%pickElectrodes))]
 
 # Filter trace
 stimTimes = trace$Time[which(  is.na(trace$Time)  )-1]
-trace = filterTrace(trace)
+#trace = filterTrace(trace)
 
 ## SAVE as .csv
 write.csv(trace, paste(savename,".csv",sep=""), row.names = FALSE)
@@ -128,6 +128,7 @@ write.csv(trace, paste(savename,".csv",sep=""), row.names = FALSE)
 ###
 #### NORMALIZE TRACE
 gTrace = NormalizeBaseline(trace, normTime = 1)
+
 PlotTrace(gTrace)
 
 
@@ -139,10 +140,10 @@ PlotTrace(gTrace)
 ## Pick what channels to plot
 # Zoom into a time window? set here limits
 
-PlotTrace(gTrace, from=0, to = 100) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
-ggsave(paste(savename,"-1.pdf", sep = ""))
+PlotTrace(gTrace, from=80, to = nrow(gTrace)) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
+ggsave(paste(savename,"-wound.pdf", sep = ""))
 
-PlotTrace(gTrace, from=100) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
+ PlotTrace(gTrace, from=100) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
 ggsave(paste(savename,"-6.pdf", sep = ""))
 
 #
@@ -154,3 +155,19 @@ AllAmplitudes = rbind(AllAmplitudes, amplitudes )
 write.csv(AllAmplitudes,"Amplitudes.csv", row.names = FALSE)
 #AllAmplitudes = NULL
 
+
+
+
+# fix trace
+from = 157.5
+to = 158.9
+e = 1
+fixed = cbind( 
+  dplyr::filter(gTrace, Electrode == e & Time >from & Time < to )%>% select(V),
+  dplyr::filter(gTrace, Electrode == e & Time >from & Time < to )%>% select(Time)
+)
+plot(fixed$Time,fixed$V)
+
+gTrace$V[min(which(gTrace$Time==from & gTrace$Electrode==e)):min(which(gTrace$Time==to& gTrace$Electrode==e))] = gTrace$V[min(which(gTrace$Time==(from-1)& gTrace$Electrode==e))]
+
+write.csv(gTrace, paste("fixed",savename,sep = ""), row.names = FALSE)
