@@ -1,0 +1,447 @@
+---
+title: "MEA_transmission"
+output: html_document
+date: "2024-08-02"
+editor_options: 
+  chunk_output_type: console
+---
+
+# 0. Libraries and functions
+```{r}
+home = getwd()
+#
+library("rhdf5")
+library("tidyr")
+library("dplyr")
+library("ggplot2")
+library("gsignal")
+library("magick")
+library("reticulate")
+library("ggpubr")
+# library instructions browseVignettes("rhdf5")
+
+pick.stream <- function(trace0, trace1){
+  # Pick the stream with the data
+  traces.all = NULL
+  answer <- readline (prompt="Which stream has the data? Enter [0] or [1] ")
+  while ( nchar(answer) > 0){ #answer != "0" && answer != "1"
+    
+    if (answer == "0") {
+      # put in dataframe
+      traces.all = data.frame("time" = time0, traces0)
+      print("Stream 0 saved")
+      # trace.plot = gather(traces.all, "e", "V", 2:ncol(traces.all))
+      # plot <- ggplot(trace.plot, aes(time, V, col = e) ) +
+      #         geom_line()
+      # print(plot)
+      break
+    } else if (answer == "1") {
+      traces.all = data.frame("time" = time1, traces1)
+      print("Stream 1 saved")
+      #trace.plot = gather(traces.all, "e", "V", 2:ncol(traces.all))
+      #plot <- ggplot(trace.plot, aes(time, V, col = e) ) +
+              geom_line()
+      #print(plot)
+      break
+    } else {
+      print("Not valid input")
+      answer <- readline (prompt="Enter [0] or [1] to pick a stream ")
+    }
+  } 
+  return(traces.all)
+} # still need this?
+normalize.trace <- function( trace.in, bl.endFrame ){
+  baseline = mean( trace.in[1:bl.endFrame] )
+  trace.out = trace.in - baseline
+  return(trace.out)
+}
+save.ask <- function() {
+  answer <- readline (prompt="Press [y] to save; [n] to skip    ")
+  while ( nchar(answer) > 0 ){
+    if (answer == "y") {
+      return("y")
+      break
+    } else if (answer == "n") {
+      return("n")
+      break
+    } else {
+      print("Not valid input")
+      answer <- readline (prompt="Press [y] to save; [n] to skip ")
+    }
+  } 
+}
+calculateslope <- function(vector) {
+  slopetrace = NULL
+  for( i in 2:length(vector)){
+    slopei = vector[i]-vector[i-1]
+    slopetrace = append(slopetrace, slopei)  
+  }
+  slopetrace = append(slopetrace, slopetrace[length(slopetrace)])
+  return(slopetrace)
+}
+findSWPvalues <- function(time, trace, start.frame){ 
+  ### Set reference time 0 when stimulus is applied: at second 90 for convention
+  stimFrame = which(round(time,2) == 0 )
+  samplerate = length(time)/( time[length(time)] - time[1])
+  
+  ### Filter signal
+  #trace[which(trace < -150)] = trace[1] # DO I NEED THIS FOR THE 32-MEA Make extreme values equal baseline. It's when the electrode looses contact.
+  # smooth with Savitzky-Golay filter.
+  # n is the amount of point befor/after the nth point to be averaged
+  # p is the filter order. Dont know what that is.
+  trace = sgolayfilt(na.omit(trace) , p = 1, n = 91)
+  trace = na.omit(trace) ## if not filtering, just omit NaNs
+  
+  
+  # plot(trace, type = "l") + abline(v=stimFrame)
+  # plot(trace, type = "l") + abline(v=start.frame)
+  
+
+
+
+                        ### Initial baseline
+  bl = mean(trace[ (start.frame-200):(start.frame-2)]) # average from 0 to before stimFrame
+
+                        ### Depolarization peak
+  ### Find peak depolarization
+  maxDepol = min(   na.omit( trace[ start.frame:length(trace) ] )   ) # find peak depol. It's extracellular recording, so depol goes to negative
+  
+  depolFrame = min( which(trace == maxDepol)  )# Find frame at maximum depol 
+  # plot(trace, type = "l") + abline(v=depolFrame) 
+  
+
+  
+                      ### Hyperpol.amplitude
+  ### Find peak of first hyperpolarization between stimulus and depol peak
+  maxHyperpol = max(  na.omit(trace[ start.frame : depolFrame ])   )
+  hyperpolFrame = min( which(trace == maxHyperpol) )# Find frame at maximum hyperpol
+  hyperpol.amplitude = maxHyperpol-bl
+  # plot(trace, type = "l") + abline(v=hyperpolFrame) 
+  
+  
+  
+                        ### depol.amplitude
+  depol.amplitude = maxDepol - abs(maxHyperpol) # Calculate max depol from the peak of hyperpol rather than from the initial baseline
+  
+  
+  
+  
+                        ### minDepolrate frame
+
+  # find the peak slope at depol part of the trace
+  # focus on the chunk between max hyperpol an max depol
+  depolTrace = trace[hyperpolFrame:depolFrame] # plot(depolTrace) 
+  depoltrace.firstderivative = calculateslope(depolTrace) # plot(depoltrace.firstderivative)
+  min.depol.rate =  min(depoltrace.firstderivative)
+  min.slope.frame = min( which(depoltrace.firstderivative == min.depol.rate) )+hyperpolFrame#+stimFrame
+  # plot(trace, type = "l") + abline(v=min.slope.frame) 
+  
+# to find half max frame, substract the halfMax V from the trace and pick the closest to 0.
+  # min.slope.frame = min (
+  #   which (  abs((depolTrace)-halfDepol ) == min( abs((depolTrace)-halfDepol))  )  ## Find the time at Halfdepol
+  # ) #+ stimFrame 
+  
+  
+  
+                     ### find half maximum of depol (bl to depol)
+  
+  halfMaxDepol = bl - abs( (maxDepol - bl)/2 )
+  halfMaxFrame = min( which( abs(depolTrace-halfMaxDepol) <= min(abs(depolTrace-halfMaxDepol)) ) ) + hyperpolFrame
+  # plot(abs(depolTrace-halfMaxDepol))
+  # plot(trace, type = "l") + abline(v=halfMaxFrame) 
+  
+
+                      ### max hyperpol rate
+  # focus on the chunk between max hyperpol an max depol
+  hyperpolTrace = trace[start.frame: hyperpolFrame] # checks the trace 20s before the peak hyperpol. plot(hyperpolTrace)
+  hyperpoltrace.firstderivative = calculateslope(hyperpolTrace) # plot(hyperpoltrace.firstderivative)
+  max.hyperpol.rate = max(hyperpoltrace.firstderivative)
+  ### Save time of max slope
+  max.slope.frame = min( which(hyperpoltrace.firstderivative == max.hyperpol.rate) ) + start.frame
+  #  plot(hyperpolTrace) + abline(v= (max.slope.frame-start.frame) ) 
+  #  plot(trace, type = "l") + abline(v=max.slope.frame) 
+  
+                       ### Hyperpol.halfmax
+  hyperpol.halfmax = bl + (hyperpol.amplitude/2)
+  # pick trace between start.frame and peak hyperpol frame
+  hyperpol.halfmax.frame = min( which( abs(hyperpolTrace-hyperpol.halfmax) <= min(abs(hyperpolTrace-hyperpol.halfmax)) ) ) + start.frame
+  #  plot(hyperpolTrace) + abline(v= (hyperpol.halfmax.frame-start.frame) ) 
+  #  plot(trace, type = "l") + abline(v=hyperpol.halfmax.frame)   
+
+                      ### hyperpol.duration from max hyperpol slope to min depol slope
+  
+  hyperpol.duration = time[min.slope.frame] - time[max.slope.frame]
+  
+                          ### second baseline
+  ### Find second baseline i.e. after repolarization
+  bl2 = mean(trace[   (length(trace)-(60*samplerate) ): length(trace)   ])
+  
+  
+  
+  
+                        ### repol.amplitude
+    # focus on repolarization part of the trace
+  repolTrace = trace[(depolFrame+1):length(trace)] # plot(repolTrace)
+  maxRepol = max(repolTrace) # maximum repolarization
+  maxRepolframe = min( which(repolTrace == maxRepol) ) +depolFrame+1
+  repol.amplitude = maxRepol-bl2 # Find hyperpolarization amplitude in the recovery phase
+  # former maxHyperpol2
+  # plot(trace, type = "l") + abline(v=maxRepolframe) 
+  
+                        ### maxRepol/2 frame
+  halfRepol = maxRepol + ((maxDepol-maxRepol)/2) # bl2 + (maxDepol - bl2)/2 # 
+  halfRepolframe =  min( which( abs(repolTrace-halfRepol) <= min(abs(repolTrace-halfRepol)) ) ) + depolFrame +1
+    # plot(trace, type = "l") + abline(v=halfRepolframe) 
+  
+                            ### Depolarization duration
+  #Time from halfmax raise and decay        
+  depDur = time[halfRepolframe ] - time[min.slope.frame]
+  
+
+  
+  #return all these
+  SWPvalues = data.frame(
+  bl,
+  stimFrame,
+  # hyperpol
+  max.hyperpol.rate,
+  max.slope.frame,
+  hyperpol.amplitude,
+  hyperpol.duration,
+  hyperpol.halfmax,
+  hyperpol.halfmax.frame,
+  # depol
+  min.depol.rate,
+  min.slope.frame,
+  halfMaxFrame,
+  depolFrame,
+  depol.amplitude,
+  depDur,
+  # repol
+  halfRepolframe,
+  repol.amplitude,
+  maxRepolframe,
+  
+  bl2
+ 
+  
+  )
+  return(SWPvalues)
+  #return( list(trace, SWPvalues))
+  
+} # time- time vector; trace- voltage vector in mV!; start.frame - define 15 s before hyperpol peak before signal start
+encode_MEA <- function(){
+    # Determine the arbitrary order of electrodes in the 32-MEA. 
+  MEA_E6basipetal = list("rowX" = c("E1","E2","E3","E4","E5","E17","E28","E29","E30","E31","E32"),
+                         "rowY" = c("E6","E7","E8","E9","E10",NaN,"E23","E24","E25","E26","E27"),
+                         "rowZ" = c("E11","E12","E13","E14","E15","E16","E18","E19","E20","E21","E22") )
+  # is it is rotated 180 degrees, the organization is inverted in x and y axes. 
+  MEA_E6acropetal = rev(MEA_E6basipetal)
+  MEA_E6acropetal[[1]] = rev(MEA_E6acropetal[[1]])
+  MEA_E6acropetal[[2]] = rev(MEA_E6acropetal[[2]])
+  MEA_E6acropetal[[3]] = rev(MEA_E6acropetal[[3]])
+  # As convention, the A1,B1,C1 will correspond to the electrodes more basipetal. NEXT pick which disposition of the MEA was used
+  # ask whether E6 is basipetal or acropetal
+  cat("Is E6 acropetal (a) or basipetal (b)?")
+  answer <- readline()
+        while ( nchar(answer) > 0 ){
+          if (answer == "a") {
+            MEA = MEA_E6acropetal
+            break
+          }
+          else if (answer == "b") {
+            MEA = MEA_E6basipetal
+            break
+          }
+          else {
+            print("Not valid input. ")
+            answer <- readline (prompt="Is E6 acropetal (a) or basipetal (b)?")
+          }
+        } 
+
+  # Initialize an empty list to store key-value pairs
+  arraykey1 <- list()
+  # Generate key-value pairs
+  rows = c("A","B","C")
+  row_count = 1
+  for (r in names(MEA) ){
+    for (i in 1:11) {
+      key <- MEA[[r]][i]  # Generate the corresponding value
+      value <- paste0(rows[row_count],"_", i)  # Concatenate "A" with the number
+      arraykey1[[key]] <- value  # Add the key-value pair to the list
+    }
+    row_count = row_count+1
+  }
+  return(arraykey1)
+}
+omit_electrodes <- function(array){
+  cat("Remove electrodes? type X_#,Y_#... or (n) to omit ")
+  answer <- readline()
+        while ( nchar(answer) > 0 ){
+          if (answer == "n") {
+            break
+          }
+          else {
+            remove.electrodes = as.vector( strsplit(answer,",") )[[1]]
+            print("removed electrodes " )
+            print(remove.electrodes )
+            remove.rows = which( ( unique(array$electrode) %in% remove.electrodes)==TRUE )
+            array[remove.rows,2:ncol(array)] = NaN
+            break
+          }
+        }
+  return(array)
+}
+```
+
+The name of the .h5 raw files should have the following structure, which is mostly the automatic output of the MCS software.
+yyyy-mm-ddThh-mm-ssxxxx_D-00042.h5 
+where: 
+xxxx should be changed to the genotype of the plant recorded. Any extra information in the file name should be erase.
+
+1. Open and plot .h5 raw data 
+
+# 1.1 Setup data manipulation specifications
+input - Manually write here specifications of the analysis
+output- creates a folder where to save all the analyzed files and plots
+```{r}
+foldername = "Output"
+batchfolder = paste(home,foldername,sep = "/")
+#downsample.to = 100 # provide the Hz you want your data to be downsampled to. NULL for skip downsample.
+stim.time = 90 # seconds at which wound is done.
+if ( !dir.exists(batchfolder) ){
+  dir.create(batchfolder)
+}
+samplerate = 100
+```
+
+
+# 1.2 Run the MCS_dataManagement.py. Opens, downsamples to 100 Hz and saves.
+/Users/j/Documents/GitHub/MCS_dataAnalysis/MCS_dataManager.py
+input   - All the ".h5" files in the home folder of this project.
+output  - a "Python-analysis" folder with ">savename<.csv" files with units s and mV and sample rate = 100 Hz.
+
+run in the console: python /Users/j/Documents/GitHub/MCS_dataAnalysis/MCS_dataManager.py
+
+# 1.3 Normalize to baseline, set array orientation, plot and save
+input   - The "Python-analysis" with ">savename<.csv" files from 1.2
+output  - Change the name of the "Python-analysis" folder to >batchfolder<.There, plot overlay of all the electrodes as ">savename<.pdf"
+```{r}
+setwd(home)
+if ( dir.exists("Python-analysis") ){
+  file.rename("Python-analysis", foldername)
+} else {
+  print("No Python-analysis folder")
+}
+setwd(batchfolder)
+files = list.files()[grep(".csv", list.files())]
+for (f in files){
+  print(f)
+  traces.all = read.csv(f)
+  savename = substr(f,1,nchar(f)-4)
+  genotype = "Col0" #substr(f,20,nchar(f)-4)
+  
+          # change name of electrodes by convention code
+  # determine orientation of the array on the leaf
+  MEA_key = encode_MEA()
+  names(traces.all) = chartr(old = "X",new = "E",x = names(traces.all) ) # standardize nomenclature
+  
+  if ( is.null(MEA_key[[ names(traces.all)[1] ]] ) == FALSE ){
+    for (i in 2:33 ) {
+      names(traces.all)[i] = MEA_key[[ names(traces.all)[i] ]] 
+    }
+  }
+
+  # go through all the columns and normalize them to their baseline. That is the first 5 seconds of the recording
+  normalize.point = which(traces.all$time == 5) # at second 5
+           
+  # Now normalize
+  for( c in 2:33){
+    traces.all[,c] = traces.all[,c]-traces.all[normalize.point,c]
+  }
+  # save genotype and other data in the dataframe
+  traces.all$genotype = genotype
+  write.csv(traces.all, paste(savename,".csv",sep = ""), row.names = FALSE)
+    # downsample for plotting.
+  trace.plot = NULL
+  for( c in 1:33 ){
+    trace.plot =  cbind( trace.plot, downsample( traces.all[,c] , 10 ) )
+  }
+  trace.plot = data.frame(trace.plot)
+  names(trace.plot) = names(traces.all)[1:33]
+  trace.plot = gather( na.omit(trace.plot) , "e", "mV", 2:33)
+  trace.events = traces.all$time[which(traces.all$events == 1)] - 0.5
+  
+  # if ( length(trace.events) > 0 ){
+  #    trace.plot = dplyr::filter(trace.plot, time>(trace.events[1]-5) & time<(trace.events[length(trace.events)]+5) )
+  # }
+  plot <- ggplot(trace.plot, aes(time, mV, col = e) ) +
+    geom_line() +
+    geom_vline(xintercept = trace.events ) + 
+    ggtitle(savename)
+  print(plot)
+  #if( save.ask() == "y"){
+    ggsave(paste(savename,".pdf",sep = ""), plot = plot)
+  #}
+}
+setwd(home) 
+```
+
+
+```{r}
+setwd(home)
+#
+power = "sineWave"
+leaf.state = "Severed"
+stimLeaf = "66"
+distalLeaf = "64"
+
+simDelay = 0.5
+
+# Plot stimulate leaf
+savename = list.files()[grep(stimLeaf, list.files() )] 
+stimLeaf.all = read.csv(savename )
+stimLeaf.plot = NULL
+for( c in 1:33 ){
+  stimLeaf.plot =  cbind( stimLeaf.plot, downsample( stimLeaf.all[,c] , 10 ) )
+}
+stimLeaf.plot = data.frame(stimLeaf.plot)
+names(stimLeaf.plot) = names(traces.all)[1:33]
+stimLeaf.plot = gather( na.omit(stimLeaf.plot) , "e", "mV", 2:33)
+stimLeaf.events = stimLeaf.all$time[which(stimLeaf.all$events == 1)] - simDelay
+if(power == "power-6") {
+  # ymin = min(stimLeaf.plot$mV) - 1
+  # ymax = max(stimLeaf.plot$mV) + 1
+}
+splot <- stimLeaf.plot%>% ggplot( aes(time, mV, col = e) ) +
+  geom_line() +
+  geom_vline(xintercept = stimLeaf.events ) + 
+  ylim(ymin, ymax) +
+  theme(legend.position = "none") +
+  ggtitle(paste("Stimulated leaf - ",power,"_", leaf.state,sep = ""))
+
+# Plot distal leaf
+distalLeaf.all = read.csv( list.files()[grep(distalLeaf, list.files() )] )
+distalLeaf.plot = NULL
+for( c in 1:33 ){
+  distalLeaf.plot =  cbind( distalLeaf.plot, downsample( distalLeaf.all[,c] , 10 ) )
+}
+distalLeaf.plot = data.frame(distalLeaf.plot)
+names(distalLeaf.plot) = names(traces.all)[1:33]
+distalLeaf.plot = gather( na.omit(distalLeaf.plot) , "e", "mV", 2:33)
+distalLeaf.events = distalLeaf.all$time[which(distalLeaf.all$events == 1)] - simDelay
+
+dplot <- distalLeaf.plot%>% ggplot( aes(time, mV, col = e) ) +
+  geom_line() +
+  geom_vline(xintercept = distalLeaf.events ) + 
+  ylim(ymin, ymax) + 
+  theme(legend.position = "none") +
+  ggtitle(paste("Distal leaf - ",power,"_", leaf.state, sep = ""))
+
+# mix both plots
+savename = substr(savename,1, nchar(d.savename)-8)
+ggarrange(splot, dplot, ncol = 1, nrow = 2)
+ggsave(paste(power,leaf.state,savename,"pdf",sep = "."), width = 6, height = 5)
+
+```
+

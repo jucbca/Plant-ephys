@@ -94,7 +94,7 @@ filename = list.files()[grep(".txt",list.files())]
 savename = substr( filename, 0, nchar(filename)-4 )
 savename = strsplit(savename,split = "_")[[1]][1]
 trace = read.delim(  filename  ) # import .txt file in the home folder
-#trace = read.csv("array1_Export.csv"  )
+# trace = read.csv("venus2.csv"  )
 CheckSampleRate(trace)
 
 # Save info from E1 column name
@@ -115,7 +115,10 @@ trace = trace[,c(1,2,which(names(trace)%in%pickElectrodes))]
 
 # Filter trace
 stimTimes = trace$Time[which(  is.na(trace$Time)  )-1]
-#trace = filterTrace(trace)
+# trace = filterTrace(trace)
+# cut chunk of trace
+# trace = trace[-c(which(trace$Time>400)),]
+
 
 ## SAVE as .csv
 write.csv(trace, paste(savename,".csv",sep=""), row.names = FALSE)
@@ -140,10 +143,10 @@ PlotTrace(gTrace)
 ## Pick what channels to plot
 # Zoom into a time window? set here limits
 
-PlotTrace(gTrace, from=80, to = nrow(gTrace)) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
-ggsave(paste(savename,"-wound.pdf", sep = ""))
+PlotTrace(gTrace, from=   97 , to = 101) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
+ggsave(paste(savename,"train.pdf", sep = ""))
 
- PlotTrace(gTrace, from=100) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
+PlotTrace(gTrace, from=100) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
 ggsave(paste(savename,"-6.pdf", sep = ""))
 
 #
@@ -156,12 +159,18 @@ write.csv(AllAmplitudes,"Amplitudes.csv", row.names = FALSE)
 #AllAmplitudes = NULL
 
 
+### Plot all APs
+for (i in stimTimes) {
+  PlotTrace(gTrace, from=   i , to = i+3)
+  ggsave(paste(savename,"-AP.",i,".pdf", sep = ""))
+}
+
 
 
 # fix trace
-from = 157.5
-to = 158.9
-e = 1
+from = 0
+to = 15
+e = 2
 fixed = cbind( 
   dplyr::filter(gTrace, Electrode == e & Time >from & Time < to )%>% select(V),
   dplyr::filter(gTrace, Electrode == e & Time >from & Time < to )%>% select(Time)
@@ -170,4 +179,4 @@ plot(fixed$Time,fixed$V)
 
 gTrace$V[min(which(gTrace$Time==from & gTrace$Electrode==e)):min(which(gTrace$Time==to& gTrace$Electrode==e))] = gTrace$V[min(which(gTrace$Time==(from-1)& gTrace$Electrode==e))]
 
-write.csv(gTrace, paste("fixed",savename,sep = ""), row.names = FALSE)
+write.csv(gTrace, paste("fixed_",savename,".csv",sep = ""), row.names = FALSE)

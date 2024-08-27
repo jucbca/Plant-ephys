@@ -304,7 +304,7 @@ xxxx should be changed to the genotype of the plant recorded. Any extra informat
 input - Manually write here specifications of the analysis
 output- creates a folder where to save all the analyzed files and plots
 ```{r}
-foldername = "231214-analysis"
+foldername = "231218-analysis"
 batchfolder = paste(home,foldername,sep = "/")
 #downsample.to = 100 # provide the Hz you want your data to be downsampled to. NULL for skip downsample.
 stim.time = 90 # seconds at which wound is done.
@@ -318,8 +318,8 @@ samplerate = 100
 # 1.2 Run the MCS_dataManagement.py. Opens, downsamples to 100 Hz and saves.
 /Users/j/Documents/GitHub/MCS_dataAnalysis/MCS_dataManager.py
 input   - All the ".h5" files in the home folder of this project.
-output  - a "Python-analysis" folder with ">savename<.csv" files with units s and mV.
-# run: python /Users/j/Documents/GitHub/MCS_dataAnalysis/MCS_dataManager.py
+output  - a "Python-analysis" folder with ">savename<.csv" files with units s and mV and sample rate = 100 Hz.
+# run in the console: python /Users/j/Documents/GitHub/MCS_dataAnalysis/MCS_dataManager.py
 
 
 # 1.3 Normalize to baseline, set array orientation, plot and save
@@ -344,8 +344,8 @@ for (f in files){
   # determine orientation of the array on the leaf
   MEA_key = encode_MEA()
   names(traces.all) = chartr(old = "X",new = "E",x = names(traces.all) ) # standardize nomenclature
-  for (i in 2:(length(names(traces.all))-1) ) {
-   names(traces.all)[i] = MEA_key[[names(traces.all)[i]]] 
+  for (i in 2:33 ) {
+   names(traces.all)[i] = MEA_key[[ names(traces.all)[i] ]] 
   }
 
   # go through all the columns and normalize them to their baseline. Do it better to the V at 5 s before max hyperpol.

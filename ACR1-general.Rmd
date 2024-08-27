@@ -28,6 +28,9 @@ library(scales)
 library(stats)
 library(lubridate)
 library(stringr)
+library(splines)
+library(modelr)
+
 # Functions
 PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)), extraInfo = "" ){
   ## Theme...
@@ -822,76 +825,36 @@ ggsave( paste( savename, ".pdf", sep = "" ) )
 
 ```
 
-5'. Genetic background - ACR1 construct comparison.
-input - A "parameters_summary.csv" file with all analyzed statistics
-output- 
-
+4.3. Plot the dose response curve from the datasummary.csv file from 4'
+input   - datasummary.csv files in their folder.
+output  - Plot of calculated variables vs the duration of the stimulus in log scale. "DoseResponse_datasummary.csv" file.
 ```{r}
 setwd(home)
-datasummary = read.csv( "KOlines.datasummary.csv" )
-# Comparte the following parameters 
-parameters = c( "peak.depol",    
-                "peak.depol.slope"  ,  
-                #"peakdepolslope.latency" ,
-                #"ss.depol"   ,        
-                "tau"       )
-# scatter plot for parameters comparing genotypes and ACR1 constructs
-head(datasummary)
-
-# organize genotype and ACR1 construct expressed
-genotype = c()
-acr1 = c()
-for(i in 1:nrow(datasummary)){
-  genotype = rbind( genotype,
-                    substr(datasummary$Genotype[i],1,(nchar(datasummary$Genotype[i])-4) )
-  )
-  acr1 = rbind(acr1, 
-               substr(datasummary$Genotype[i],(nchar(datasummary$Genotype[i])-2),nchar(datasummary$Genotype[i]))
-  )
+# get all the summaries in the same data frame
+folders = grep("doseResp", list.files())
+dates = c()
+id = 1
+DoseResponse_datasummary = data.frame()
+for (f in folders ){
+  name = list.files()[f]
+  date = substr(name,nchar(name)-5,nchar(name))
+  setwd( paste(home,list.files()[f],sep="/") )
+  datasummary = read.csv( list.files()[grep("datasummary",list.files())] )
+  datasummary$date = date
+  if (date %in% dates ){
+    id = length(which(dates == date)) + 1
+    datasummary$id = id
+  } else {
+    datasummary$id = 1
+  }
+  DoseResponse_datasummary = rbind( DoseResponse_datasummary, datasummary )
+  dates = append(dates, date)
+  setwd(home)
+  print(name)
+  print(id)
 }
-datasummary$Genotype = as.vector( genotype )
-datasummary$ACR1 = as.vector( acr1 )
+write.csv(DoseResponse_datasummary, "DoseResponse.datasummary.csv",row.names = FALSE )
 
-datasummary = datasummary[-c(which(datasummary$ACR1=="001")),]  # tst
-#datasummary %>% dplyr::filter(ACR1 == c("026","030") ) 
-datasummary = datasummary[-c(which(datasummary$Genotype =="slah3.1")),]
-# plot now
-for(v in names(datasummary)[names(datasummary) %in% parameters ] ){
-  print(v)
-  plot <- 
-    ggplot( datasummary, aes(Genotype, datasummary[,v], color = ACR1 ) ) +
-    geom_point(position = position_jitter(0.2), size = 3 ) +
-    labs (y = v) + 
-    ggtitle( "530nm - 1050µW/mm2 - 1s" ) +
-    theme(
-    axis.text.x = element_text(color = "black", size = 20, angle = 0, hjust = 0.5, vjust = 0, face = "plain"),
-    axis.text.y = element_text(color = "black", size = 20, angle = 0, hjust = 0 , vjust = 0.5, face = "plain"),
-    axis.title.x = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), #element_blank(), #
-    axis.title.y = element_text(color = "black", size = 25, angle = 90, hjust = 0.5, vjust = 1, face = "plain"),
-    plot.title = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), # element_blank(), 
-    legend.text = element_text(size = 20),
-    legend.title = element_text(hjust = 0.1, size = 20),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor.y = element_line(),
-    panel.grid.major.x = element_blank(), #element_blank(), #element_line()
-    panel.grid.minor.x = element_blank()) 
-  print(plot) 
-  ggsave( paste( "KOs-026.030_",v, ".pdf", sep = "" ) )
-}
-
-
-```
-
-
-
-
- 5. Run statistics! Decide which ones you want to run
-
-
-5.0. Plot the dose response curve from the datasummary.csv file from 4'
-input   - datasummary.csv file with all the parameters for each stimulus
-output  - Plot of calculated variables vs the duration of the stimulus in log scale
-```{r}
 # Violin plot for each parameter calculated
 My_Theme =  theme(
   axis.text.x = element_text(color = "black", size = 20, angle = 0, hjust = 0.5, vjust = 0, face = "plain"),
@@ -900,13 +863,13 @@ My_Theme =  theme(
   axis.title.y = element_text(color = "black", size = 25, angle = 90, hjust = 0.5, vjust = 1, face = "plain"),
   plot.title = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), # element_blank(), 
   legend.text = element_text(size = 20),
-  legend.title = element_text(hjust = 0.1, size = 20),
+  legend.title = element_text(hjust = 0.1, size = 20), 
   panel.grid.major.y = element_blank(),
   panel.grid.minor.y = element_blank(),
   panel.grid.major.x = element_line(), #element_blank(), #element_line()
   panel.grid.minor.x = element_line()) 
 
-head(datasummary)
+head(DoseResponse_datasummary)
 parameters2plot = c("peak.depol",
                     "peakdepolslope.latency",
                     "tau",
@@ -914,9 +877,9 @@ parameters2plot = c("peak.depol",
 # "ss.depol",
 #                     "peakdepol.latency",
 #                     "peak.depol.slope",
-for( v in which(names(datasummary)%in%parameters2plot) ){
+for( v in which(names(DoseResponse_datasummary)%in%parameters2plot) ){
 figure <-   
-  ggplot(dplyr::filter(datasummary), aes(`Intensity`, datasummary[,v], color = `Leaf` )) +
+  ggplot(dplyr::filter(DoseResponse_datasummary), aes(`Intensity`, DoseResponse_datasummary[,v], color = `Leaf` )) + #
   geom_point(size = 3) +
   scale_x_continuous(trans='log10',
                      breaks=c(1,10,100,1000,10000) #trans_breaks('log10', function(x) 10^x),
@@ -934,6 +897,166 @@ ggsave(paste(home,"/DoseResponse-",names(datasummary)[v],".pdf",sep = "") )
 
 setwd(home)
 ```
+
+4.4. 
+input - DoseResponse.datasummary.csv for one genotype
+output - scatterplots of the parameters normalized and with mean SEM whiskers. 
+
+```{r}
+setwd(home)
+data = read.csv("DoseResponse.datasummary.csv")
+plot.parameters = c("peak.depol",
+                    "peak.depol.slope",
+                    "peakdepolslope.latency",
+                    "tau")
+# modify data: normalize to max peak.depol of each leaf.
+normalized.data = NULL
+for( d in unique(data$date) ){
+  set <- data %>% dplyr::filter(date == d)
+  print(d)
+  for( i in unique(set$id) ){
+    set1 <- set %>% dplyr::filter(id==i)
+    print(paste("id",i))
+    for (p in which(names(data) %in% plot.parameters) ){
+      set.max = max(abs( set1[,p] ))
+      set1[,p] = abs( set1[,p] ) /as.numeric(set.max)
+      print(names(data)[p])
+    }
+    normalized.data = rbind( normalized.data, set1)
+  }
+}
+# get fit
+
+# get mean and SEM
+summarized.data = NULL
+for ( i in unique(normalized.data$Intensity) ){
+  set1 = dplyr::filter(normalized.data, Intensity==i)
+  set.summary = data.frame("Intensity" = i )
+  for (p in which(names(data) %in% plot.parameters) ){
+    summarized.data = rbind( summarized.data, cbind( set.summary, data.frame(
+      "Mean" = mean(na.omit(set1[,p])) ,
+      "SEM" =sd( na.omit(set1[,p])/nrow(set1)) ,
+      "n" =  length(na.omit(set1[,p]) ),
+      "Parameter" = names(data)[p],
+      "Genotype" = "Col0"
+    ) )
+    )
+  }
+}
+
+
+# plot each parameter
+
+for ( p in plot.parameters){
+  ggplot(dplyr::filter(summarized.data, Parameter==p ),
+       aes(log(Intensity,base=10), Mean) ) +
+  geom_point(size = 1.5, color = "magenta") +
+  geom_errorbar(aes(ymin = Mean - SEM, ymax = Mean+SEM), color="magenta") +
+  geom_point(data=normalized.data, aes(log(Intensity,base=10), normalized.data[,which(names(normalized.data)==p)]),
+             size = 0.5, alpha = 0.6) + 
+  ggtitle( p ) +
+  ylab (paste("Normalized ", p, sep = "")) +
+  xlab("log10(Light intensity µW/mm2) ") +
+  theme(
+    axis.text.x = element_text(color = "black", size = 20, angle = 0, hjust = 0, vjust = 0.5, face = "plain"),
+    axis.text.y = element_text(color = "black", size = 20, angle = 0, hjust = 0 , vjust = 0.5, face = "plain"),
+    axis.title.x = element_text(color = "black", size = 20, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), #element_blank()
+    axis.title.y = element_text(color = "black", size = 20, angle = 90, hjust = 0.5, vjust = 0.5, face = "plain"),
+    plot.title = element_text(color = "black", size = 20, angle = 0, hjust = 0.5, vjust = 0, face = "bold"),
+    legend.text = element_text(size = 20),
+    legend.title = element_text(hjust = 0.1, size = 20),
+    panel.grid.major.y = element_line(),
+    panel.grid.minor.y = element_line(),
+    panel.grid.major.x = element_line(), #element_line()
+    panel.grid.minor.x = element_line()#,
+    #panel.background = element_blank() 
+    ) 
+ggsave( paste(p, ".pdf",sep = "") )
+}
+
+
+
+
+
+########## fit data
+# transform data
+x = log(normalized.data$Intensity, base = 10)
+y = normalized.data$peak.depol
+#  use a linear model.  lm()
+fit <- lm(y ~ ns(x,i) )
+fit.info = summary(fit)
+fitR2 = fit.info$r.squared
+### OOOOOR 
+# Use a non-linear model. nsl()
+fit <- nls( y ~ SSlogis(x, Asym, xmid, scal) ) 
+fit.info = summary(fit)
+# add to dataframe
+normalized.data <- add_predictions(normalized.data, fit)
+# plot
+ggplot(normalized.data, aes( log(Intensity,base=10), peak.depol ))+
+  geom_point() +
+  geom_line( aes( y = pred ), color="red" )
+
+# add fitting to df and save
+ggsave("fitting-peak.depol.pdf")
+names(normalized.data)[18] = "LogisticRegression.Fit"
+write.csv(normalized.data, "Normalized.peak.depol.csv", row.names = FALSE)
+save(fit.info,file="fitting-peak.depol-parameters.RData")
+
+
+    
+
+
+```
+
+
+4.5. Genetic background - ACR1 construct comparison.
+input - A "DoseResponse_datasummary_>genotype<.csv" file with all analyzed statistics of each genotype
+output- 
+
+```{r}
+setwd(home)
+
+compiled_datasummary = NULL
+for (f in list.files()[grep("datasummary",list.files())]) {
+  data = read.csv(f)
+  compiled_datasummary = rbind(compiled_datasummary, data )
+  print(f)
+}
+write.csv(compiled_datasummary, "genotype_datasummary_240726.csv")
+# Plot all parameter with both genotypes
+for( v in which(names(DoseResponse_datasummary)%in%parameters2plot) ){
+figure <-
+  ggplot(dplyr::filter(compiled_datasummary), aes(`Intensity`, compiled_datasummary[,v], color = `Genotype` )) + #
+  geom_point(size = 2) +
+  geom_smooth(aes(color = `Genotype`)) +
+  scale_x_continuous(trans='log10',
+                     breaks=c(1,10,100,1000,10000) #trans_breaks('log10', function(x) 10^x),
+                     ) +
+  #xlim(c(1,5)) +
+  xlab ("log10 Power density 535nm light (µW/mm2)") + 
+  ylab (names(datasummary)[v]) + 
+  ggtitle("Dose-response") +
+  My_Theme
+  print(figure)
+  ggsave(paste(home,"/genotypes_DoseResp-",names(datasummary)[v],".pdf",sep = "") )
+
+}
+
+
+
+
+```
+
+
+
+
+
+
+
+ 5. Run statistics! Decide which ones you want to run
+
+
 
 5.1 Compare parameters between genotypes, positions or electrodes
 input   -   datasummary.csv
