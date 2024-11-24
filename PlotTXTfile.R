@@ -12,7 +12,7 @@ PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)) ){
     axis.text.y = element_text(color = "black", size = 20, angle = 0, hjust = 0 , vjust = 0.5, face = "plain"),
     axis.title.x = element_text(color = "black", size = 30, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), #element_blank()
     axis.title.y = element_text(color = "black", size = 30, angle = 0, hjust = 0, vjust = 0.5, face = "plain"),
-    plot.title = element_text(color = "black", size = 30, angle = 0, hjust = 0.5, vjust = 0, face = "bold"), # element_blank(),#
+    plot.title = element_text(color = "black", size = 10, angle = 0, hjust = 0.5, vjust = 0, face = "bold"), # element_blank(),#
     legend.text = element_text(size = 20),
     legend.title = element_text(hjust = 0.1, size = 20),
     panel.grid.major.y = element_blank(),
@@ -22,11 +22,11 @@ PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)) ){
   ##
   
   tracePlot <- trace %>% dplyr::filter(`Time` > from & `Time` < to ) %>% 
-    ggplot(aes(`Time`, `V`, color = `Electrode`)) +
-    geom_line(size = 0.5) +
-    guides(color = guide_legend(override.aes = list(size = 3) )) +
-    geom_vline(xintercept = stimTimes[ which(stimTimes>from & stimTimes<to) ], size = 0.1 ) + #Make vertical lines the data point immediately after the stimulus pedal was hit. And that are inside the plotting time range.
-    ylab ("V") + 
+    ggplot(aes(`Time`, `mV`, color = `Electrode`)) +
+    geom_line(linewidth = 0.5) +
+    guides(color = guide_legend(override.aes = list(linewidth = 3) )) +
+    geom_vline(xintercept = stimTimes[ which(stimTimes>from & stimTimes<to) ], linewidth = 0.1 ) + #Make vertical lines the data point immediately after the stimulus pedal was hit. And that are inside the plotting time range.
+    #ylab ("V") + 
     xlab ("Time (s)") + 
     labs(color = "Electrode") +
     ggtitle(paste(savename,metaData)) +
@@ -39,13 +39,14 @@ PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)) ){
   
 }
 NormalizeBaseline <- function(trace, normTime = 0 ){
-  stimIndex = which(trace$Time == normTime)
+  stimIndex = which(trace$Time == normTime)[1]
   for(i in c(3:ncol(trace)) ){
     trace[,i] = trace[,i]-trace[stimIndex,i]
   } # Normalize the trace w/ the baseline. make all start at zero.
-  trace = gather(trace, "Electrode", "V", 3:ncol(trace)) # change structure for ggplot management
+  trace = gather(trace, "Electrode", "mV", 3:ncol(trace)) # change structure for ggplot management
+  trace$mV = trace$mV*100
   return(trace)
-} ## INPUT trace spreaded i.e. each electrode as column. Won't work if data is not at 10Hz samplerate. Output: normalized, gathered trace for plotting.
+} ## INPUT trace spreaded  i.e. each electrode as column. Won't work if data is not at 10Hz samplerate. Voltage as V (how it comes out of the computer) Output: normalized, gathered trace for plotting, Voltage data transformed from V to mV!
 CalculateAmplitude <- function(trace, stimTime){
   # calculate baseline (1s average)
   stimIndex = which(trace$Time == stimTime)
@@ -64,7 +65,7 @@ CalculateAmplitude <- function(trace, stimTime){
   return(amplitudes)
 }
 CheckSampleRate <- function(trace){
-  sampleRate = round(60/trace$Time[60],1) # 60 samples in x seconds that ran in the first 60 samples. (Hz)
+  sampleRate = round(60/trace$Time[61],1) # 60 samples in x seconds that ran in the first 60 samples. (Hz)
   if(round(sampleRate) <= 10){
     print("ERROR! sample rate is not 10Hz. Quantification won't work")
   } else {
@@ -77,7 +78,7 @@ filterTrace <- function(trace){
   for( e in pickElectrodes){
     Electrode = e
     NArow = which(is.na(trace[,which(names(trace)==Electrode)]))
-    trace[NArow,] = trace[(E=NArow-1),] 
+    trace[NArow,] = trace[(NArow-1),] 
     # smooth with Savitzky-Golay filter. 
     # n is the amount of point befor/after the nth point to be averaged
     # p is the filter order. Dont know what that is.
@@ -94,12 +95,13 @@ filename = list.files()[grep(".txt",list.files())]
 savename = substr( filename, 0, nchar(filename)-4 )
 savename = strsplit(savename,split = "_")[[1]][1]
 trace = read.delim(  filename  ) # import .txt file in the home folder
+trace$Time = as.numeric(trace$Time)
 # trace = read.csv("venus2.csv"  )
 CheckSampleRate(trace)
 
 # Save info from E1 column name
 metaData = names(trace)[grep("E1", names(trace))]
-metaData = strsplit(metaData,"_")[[1]][3]
+#metaData = strsplit(metaData,"_")[[1]][3]
 
 
 electrodeNums = NULL## Save the number of the electrode
@@ -107,21 +109,42 @@ for(i in  names(trace)[3:ncol(trace)] ){
   electrodeNums = append(electrodeNums, as.numeric( substr(i,2, 2) ))
 }
 names(trace)[3:ncol(trace)] = electrodeNums # Make the columns' names numeric variables
-
+# trace = trace[,1:4]
 
 # Select just few electrodes.
 pickElectrodes = c(1,2)
 trace = trace[,c(1,2,which(names(trace)%in%pickElectrodes))]
+# make the numbers numeric variables. They might be characters
+for(c in 2:ncol(trace) ){
+  trace[,c] = as.numeric(trace[,c])
+}
 
-# Filter trace
+# Filter Trace
+#trace = filterTrace(trace)
+
+# Make a single continuous time vector out of two in parallel
+if(length(which(trace$Time==0))>1){
+  trace$Time[which(trace$Time==0)[2]:nrow(trace)] =
+    trace$Time[which(trace$Time==0)[2]:nrow(trace)]+
+    trace$Time[which(trace$Time==0)[2]-2]
+}
 stimTimes = trace$Time[which(  is.na(trace$Time)  )-1]
-# trace = filterTrace(trace)
+
+# change name of electrodes
+# names(trace)[3] = "E1_lobe"
+# names(trace)[4] = "E2_petiole"
+
+
+
 # cut chunk of trace
 # trace = trace[-c(which(trace$Time>400)),]
 
-
+#### NORMALIZE TRACE
+gTrace = NormalizeBaseline(trace, normTime = 1)
+# Plot
+PlotTrace(gTrace)
 ## SAVE as .csv
-write.csv(trace, paste(savename,".csv",sep=""), row.names = FALSE)
+write.csv(gTrace, paste(savename,".csv",sep=""), row.names = FALSE)
 
 
 
@@ -129,10 +152,7 @@ write.csv(trace, paste(savename,".csv",sep=""), row.names = FALSE)
 #
 ##
 ###
-#### NORMALIZE TRACE
-gTrace = NormalizeBaseline(trace, normTime = 1)
 
-PlotTrace(gTrace)
 
 
 
@@ -143,8 +163,8 @@ PlotTrace(gTrace)
 ## Pick what channels to plot
 # Zoom into a time window? set here limits
 
-PlotTrace(gTrace, from=   97 , to = 101) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
-ggsave(paste(savename,"train.pdf", sep = ""))
+PlotTrace(gTrace, from=  372 , to = 376) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
+ggsave(paste(savename,"372-376.pdf", sep = ""))
 
 PlotTrace(gTrace, from=100) #dplyr::filter(trace, Electrode == 1 | Electrode == 2 | Electrode == 3 | Electrode == 4) )
 ggsave(paste(savename,"-6.pdf", sep = ""))

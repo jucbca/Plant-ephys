@@ -81,10 +81,9 @@ calculateslope <- function(vector) {
 findSWPvalues <- function(time, trace, start.frame){ 
   ### Set reference time 0 when stimulus is applied: at second 90 for convention
   stimFrame = which(round(time,2) == 0 )
-  samplerate = length(time)/( time[length(time)] - time[1])
+  samplerate =  (length(time)) /round( time[length(time)] - time[1]) 
   
-  ### Filter signal
-  #trace[which(trace < -150)] = trace[1] # DO I NEED THIS FOR THE 32-MEA Make extreme values equal baseline. It's when the electrode looses contact.
+### Filter signal
   # smooth with Savitzky-Golay filter.
   # n is the amount of point befor/after the nth point to be averaged
   # p is the filter order. Dont know what that is.
@@ -99,7 +98,7 @@ findSWPvalues <- function(time, trace, start.frame){
 
 
                         ### Initial baseline
-  bl = mean(trace[ (start.frame-200):(start.frame-2)]) # average from 0 to before stimFrame
+  bl.1st = mean(trace[ (start.frame-(90*samplerate)):(start.frame-2)]) # average from 0 to before stimFrame
 
                         ### Depolarization peak
   ### Find peak depolarization
@@ -114,7 +113,7 @@ findSWPvalues <- function(time, trace, start.frame){
   ### Find peak of first hyperpolarization between stimulus and depol peak
   maxHyperpol = max(  na.omit(trace[ start.frame : depolFrame ])   )
   hyperpolFrame = min( which(trace == maxHyperpol) )# Find frame at maximum hyperpol
-  hyperpol.amplitude = maxHyperpol-bl
+  hyperpol.amplitude = maxHyperpol-bl.1st
   # plot(trace, type = "l") + abline(v=hyperpolFrame) 
   
   
@@ -131,97 +130,104 @@ findSWPvalues <- function(time, trace, start.frame){
   # focus on the chunk between max hyperpol an max depol
   depolTrace = trace[hyperpolFrame:depolFrame] # plot(depolTrace) 
   depoltrace.firstderivative = calculateslope(depolTrace) # plot(depoltrace.firstderivative)
-  min.depol.rate =  min(depoltrace.firstderivative)
-  min.slope.frame = min( which(depoltrace.firstderivative == min.depol.rate) )+hyperpolFrame#+stimFrame
-  # plot(trace, type = "l") + abline(v=min.slope.frame) 
-  
-# to find half max frame, substract the halfMax V from the trace and pick the closest to 0.
-  # min.slope.frame = min (
-  #   which (  abs((depolTrace)-halfDepol ) == min( abs((depolTrace)-halfDepol))  )  ## Find the time at Halfdepol
-  # ) #+ stimFrame 
-  
+  depol.slope =  min(depoltrace.firstderivative)
+  depol.slope.frame = min( which(depoltrace.firstderivative == depol.slope) )+hyperpolFrame
+
+  # plot(trace, type = "l") + abline(v=depol.slope.frame) 
+
   
   
                      ### find half maximum of depol (bl to depol)
   
-  halfMaxDepol = bl - abs( (maxDepol - bl)/2 )
-  halfMaxFrame = min( which( abs(depolTrace-halfMaxDepol) <= min(abs(depolTrace-halfMaxDepol)) ) ) + hyperpolFrame
-  # plot(abs(depolTrace-halfMaxDepol))
-  # plot(trace, type = "l") + abline(v=halfMaxFrame) 
+  halfmax.depol = round( maxHyperpol - (( abs(maxDepol)+abs(maxHyperpol) )/2), 2 )
+  halfmax.depol.frame = max( which( abs(depolTrace-halfmax.depol) <=
+                                      min(abs(depolTrace-halfmax.depol))+1 ) )   + hyperpolFrame
+  
+  # plot(abs(depolTrace-halfmax.depol))
+  # plot(trace, type = "l") + abline(v=halfmax.depol.frame) 
   
 
+  
+  
                       ### max hyperpol rate
-  # focus on the chunk between max hyperpol an max depol
-  hyperpolTrace = trace[start.frame: hyperpolFrame] # checks the trace 20s before the peak hyperpol. plot(hyperpolTrace)
+  # focus on the chunk before the max hyperpol 
+  hyperpolTrace = trace[(hyperpolFrame-(20*samplerate)): (hyperpolFrame+2)] # checks the trace 20s before the peak hyperpol. plot(hyperpolTrace)
+  
   hyperpoltrace.firstderivative = calculateslope(hyperpolTrace) # plot(hyperpoltrace.firstderivative)
-  max.hyperpol.rate = max(hyperpoltrace.firstderivative)
+  hyperpol.slope = max(hyperpoltrace.firstderivative)
   ### Save time of max slope
-  max.slope.frame = min( which(hyperpoltrace.firstderivative == max.hyperpol.rate) ) + start.frame
-  #  plot(hyperpolTrace) + abline(v= (max.slope.frame-start.frame) ) 
-  #  plot(trace, type = "l") + abline(v=max.slope.frame) 
+  hyperpol.slope.frame = min( which(hyperpoltrace.firstderivative == hyperpol.slope) ) +
+                          hyperpolFrame-(20*samplerate)
+
+  
+  #  plot(hyperpolTrace) + abline(v= (hyperpol.slope.frame-start.frame) ) 
+  #  plot(trace, type = "l") + abline(v=hyperpol.slope.frame) 
   
                        ### Hyperpol.halfmax
-  hyperpol.halfmax = bl + (hyperpol.amplitude/2)
+  hyperpol.halfmax = bl.1st + (hyperpol.amplitude/2)
   # pick trace between start.frame and peak hyperpol frame
-  hyperpol.halfmax.frame = min( which( abs(hyperpolTrace-hyperpol.halfmax) <= min(abs(hyperpolTrace-hyperpol.halfmax)) ) ) + start.frame
+  hyperpol.halfmax.frame = min( which( abs(hyperpolTrace-hyperpol.halfmax) <= min(abs(hyperpolTrace-hyperpol.halfmax)) ) ) + (hyperpolFrame-(20*samplerate)) 
   #  plot(hyperpolTrace) + abline(v= (hyperpol.halfmax.frame-start.frame) ) 
   #  plot(trace, type = "l") + abline(v=hyperpol.halfmax.frame)   
 
                       ### hyperpol.duration from max hyperpol slope to min depol slope
   
-  hyperpol.duration = time[min.slope.frame] - time[max.slope.frame]
-  
+  hyperpol.duration = time[depol.slope.frame] - time[hyperpol.slope.frame]
+
                           ### second baseline
   ### Find second baseline i.e. after repolarization
-  bl2 = mean(trace[   (length(trace)-(60*samplerate) ): length(trace)   ])
+  bl.2nd= mean(trace[   (length(trace)-(60*samplerate) ): length(trace)   ])
+
   
   
-  
-  
-                        ### repol.amplitude
+                        ###  hyperpol.amplitude.2nd
     # focus on repolarization part of the trace
   repolTrace = trace[(depolFrame+1):length(trace)] # plot(repolTrace)
   maxRepol = max(repolTrace) # maximum repolarization
-  maxRepolframe = min( which(repolTrace == maxRepol) ) +depolFrame+1
-  repol.amplitude = maxRepol-bl2 # Find hyperpolarization amplitude in the recovery phase
+  maxRepolframe = which(repolTrace == maxRepol)+depolFrame
+  hyperpol.amplitude.2nd = maxRepol-bl.2nd# Find hyperpolarization amplitude in the recovery phase
   # former maxHyperpol2
   # plot(trace, type = "l") + abline(v=maxRepolframe) 
   
                         ### maxRepol/2 frame
-  halfRepol = maxRepol + ((maxDepol-maxRepol)/2) # bl2 + (maxDepol - bl2)/2 # 
-  halfRepolframe =  min( which( abs(repolTrace-halfRepol) <= min(abs(repolTrace-halfRepol)) ) ) + depolFrame +1
-    # plot(trace, type = "l") + abline(v=halfRepolframe) 
+  halfRepol = maxRepol + ((maxDepol-maxRepol)/2) # bl.2nd+ (maxDepol - bl.2nd)/2 # 
+  halfmax.repol.frame = max( which( abs(repolTrace-halfRepol) <= min(abs(repolTrace-halfRepol))+1 ) )   + depolFrame
+    # plot(trace, type = "l") + abline(v=halfmax.repol.frame) 
   
                             ### Depolarization duration
   #Time from halfmax raise and decay        
-  depDur = time[halfRepolframe ] - time[min.slope.frame]
-  
-
+  depol.duration = time[halfmax.repol.frame ] - time[halfmax.depol.frame]
+  # Calculate time between slope and halfmax of the depol as parameter
+  depol.slope2halfmax = time[halfmax.depol.frame ] - time[depol.slope.frame]
   
   #return all these
   SWPvalues = data.frame(
-  bl,
+  bl.1st,
   stimFrame,
   # hyperpol
-  max.hyperpol.rate,
-  max.slope.frame,
+  maxHyperpol,
+  hyperpol.slope,
+  hyperpol.slope.frame,
   hyperpol.amplitude,
   hyperpol.duration,
   hyperpol.halfmax,
   hyperpol.halfmax.frame,
   # depol
-  min.depol.rate,
-  min.slope.frame,
-  halfMaxFrame,
+  maxDepol,
+  depol.slope,
+  depol.slope.frame,
+  halfmax.depol.frame,
   depolFrame,
   depol.amplitude,
-  depDur,
+  depol.duration,
+  depol.slope2halfmax,
   # repol
-  halfRepolframe,
-  repol.amplitude,
+  maxRepol,
+  halfmax.repol.frame,
+  hyperpol.amplitude.2nd,
   maxRepolframe,
   
-  bl2
+  bl.2nd
  
   
   )
@@ -229,6 +235,7 @@ findSWPvalues <- function(time, trace, start.frame){
   #return( list(trace, SWPvalues))
   
 } # time- time vector; trace- voltage vector in mV!; start.frame - define 15 s before hyperpol peak before signal start
+
 encode_MEA <- function(){
     # Determine the arbitrary order of electrodes in the 32-MEA. 
   MEA_E6basipetal = list("rowX" = c("E1","E2","E3","E4","E5","E17","E28","E29","E30","E31","E32"),
@@ -304,7 +311,7 @@ xxxx should be changed to the genotype of the plant recorded. Any extra informat
 input - Manually write here specifications of the analysis
 output- creates a folder where to save all the analyzed files and plots
 ```{r}
-foldername = "231218-analysis"
+foldername = "2312xx-Col0"
 batchfolder = paste(home,foldername,sep = "/")
 #downsample.to = 100 # provide the Hz you want your data to be downsampled to. NULL for skip downsample.
 stim.time = 90 # seconds at which wound is done.
@@ -359,7 +366,7 @@ for (f in files){
            
   # Now normalize
   for( c in 2:33){
-    traces.all[,c] = traces.all[,c]-traces.all[normalize.point,c]
+    #traces.all[,c] = traces.all[,c]-traces.all[normalize.point,c]
   }
   # save genotype and other data in the dataframe
   traces.all$genotype = genotype
@@ -378,7 +385,6 @@ for (f in files){
   #if( save.ask() == "y"){
     ggsave(paste(savename,".pdf",sep = ""), plot = plot)
   #}
-        
 }
 setwd(home) 
 ```
@@ -404,7 +410,7 @@ for (f in files){
   }
   array_SWPparameters = data.frame()
     # Loop through all the electrodes
-  for (c in 2:33 ){
+  for (c in grep("_",names(traces.all)) ){
     if( getwd() != plant_folder ){
         setwd(plant_folder)
     }
@@ -416,12 +422,12 @@ for (f in files){
       # determine the frame at 15 s prior to hyperpol peak
     to =  which(trace == min(trace[(90*samplerate):length(trace)]) ) 
     to =  min( to[ which(to  >= (90*samplerate) ) ] )
-    from = which(trace[(to-(90*samplerate)):to] == max(trace[(to-(90*samplerate)):to]) ) + to-(105*samplerate) # start.frame = from
+    from = which(trace[(to-(90*samplerate)):to] == max(trace[(to-(90*samplerate)):to]) ) + to-((90+15)*samplerate) # start.frame = from
     plot(trace,type="l") + abline(h =  max(trace[(to-(90*samplerate)):to]) ) + abline(v= from )
     #  
     ##
     ###
-    SWPvalues = findSWPvalues(time = time, trace = trace, start.frame =  from)
+    SWPvalues = findSWPvalues( time = time, trace = trace, start.frame =  from )
     ###
     ##
     #
@@ -430,17 +436,23 @@ for (f in files){
     par(mfrow = c(1, 1)) # make one plots
     pdf( paste(electrode,".pdf",sep = "") )
     plot(x = traces.all$time, y = traces.all[,c] , type = "l", main = savename, ) + # ylim=c(-100,40)
-    abline(h = SWPvalues$bl, col="black", lty = 2) +
-    abline(v = traces.all$time[SWPvalues$min.slope.frame], col="red") +
-    abline(v = traces.all$time[SWPvalues$halfMaxFrame], col="green", lty = 2) +
-    abline(v = traces.all$time[SWPvalues$max.slope.frame], col="red") +
-    abline(v = traces.all$time[SWPvalues$depolFrame], col="red", lty = 2) +
-    abline(v = traces.all$time[SWPvalues$halfRepolframe], col="green") +
-    abline(h = SWPvalues$maxDepol, col = "red") +
+    abline(h = SWPvalues$bl.1st, col="black", lty = 2) +
+    abline(v = 0, col="black", lty = 2) +
+      
     abline(h = SWPvalues$maxHyperpol, col = "blue") +
-    abline(h = SWPvalues$maxRepol, col = "blue") +
-    abline(h = SWPvalues$bl2, col="green", lty = 2) +
-    abline(v = 0, col="black", lty = 2)
+    abline(v = traces.all$time[SWPvalues$hyperpol.slope.frame], col="blue",lty = 2) +
+    abline(v = traces.all$time[SWPvalues$hyperpol.halfmax.frame], col="blue") +  
+      
+    abline(h = SWPvalues$maxDepol, col = "orange") +  
+    abline(v = traces.all$time[SWPvalues$depol.slope.frame], col="orange", lty = 2) +
+    abline(v = traces.all$time[SWPvalues$halfmax.depol.frame], col="orange") +
+    abline(v = traces.all$time[SWPvalues$depolFrame], col="orange", lty = 3) +
+      
+      
+    abline(v = traces.all$time[SWPvalues$halfmax.repol.frame], col="red") +
+    abline(h = SWPvalues$maxRepol, col = "red") +
+    abline(h = SWPvalues$bl.2nd, col="red", lty = 2)
+    
     dev.off()
       # compile all parameters of all electrodes in one df.
     array_SWPparameters= rbind( array_SWPparameters, cbind(electrode, SWPvalues)  )
@@ -451,10 +463,13 @@ for (f in files){
 }
 setwd(home)
 print("Done. Continue with # 3")
-# # remove problematic electrodes. 
+# # # remove problematic electrodes. 
 # setwd(batchfolder)
+# print(f)
+# print(electrode)
 # traces.all = read.csv(f)
-# traces.all$C_8 = traces.all$C_10
+# traces.all = traces.all[,-c(which(names(traces.all)==electrode))]
+# setwd(home)
 # write.csv(traces.all, f, row.names = FALSE )
 ## then remove all the .csv files already done and restart the chunk
 ```
@@ -477,13 +492,13 @@ for (c in grep( "B", names(traces.all))  ){
   plot(x = traces.all$time, y = traces.all[,c] , type = "l", main = plotTitle, 
        ylim=axis.lim ) +
   abline(h = SWPvalues$bl, col="black", lty = 2) +
-  abline(v = traces.all$time[SWPvalues$min.slope.frame], col="red") +
-  abline(v = traces.all$time[SWPvalues$max.slope.frame], col="red") +
-  abline(v = traces.all$time[SWPvalues$halfRepolframe], col="green") +
+  abline(v = traces.all$time[SWPvalues$depol.slope.frame], col="red") +
+  abline(v = traces.all$time[SWPvalues$hyperpol.slope.frame], col="red") +
+  abline(v = traces.all$time[SWPvalues$halfmax.repol.frame], col="green") +
   abline(h = SWPvalues$maxDepol, col = "red") +
   abline(h = SWPvalues$maxHyperpol, col = "blue") +
   abline(h = SWPvalues$maxRepol, col = "blue") +
-  abline(h = SWPvalues$bl2, col="green", lty = 2) +
+  abline(h = SWPvalues$bl.2nd, col="green", lty = 2) +
   abline(v = 0, col="black", lty = 2) 
   dev.off()
 
@@ -511,27 +526,28 @@ output  -
 ```{r}
 setwd(batchfolder)
 # Loop through all these parameters
-parameter2plot = c("bl",
+parameter2plot = c("bl.1st",
                    "hyperpol.amplitude",
                    "hyperpol.duration",
-                   "max.slope.frame",
-                   "max.hyperpol.rate",
+                   "hyperpol.slope.frame",
+                   "hyperpol.slope",
                    "hyperpol.halfmax",
                    "hyperpol.halfmax.frame",
                    
                    
                    "depol.amplitude",
-                   "depDur",
-                   "min.depol.rate",
-                   "min.slope.frame",
-                   "halfMaxFrame",
+                   "depol.duration",
+                   "depol.slope",
+                   "depol.slope.frame",
+                   "halfmax.depol.frame",
+                   "depol.slope2halfmax",
                    
-                   "repol.amplitude",
-                   "halfRepolframe",
+                   "hyperpol.amplitude.2nd",
+                   "halfmax.repol.frame",
                    
-                   "repol.amplitude",
-                   "halfRepolframe",
-                   "bl2"
+                   "hyperpol.amplitude.2nd",
+                   "halfmax.repol.frame",
+                   "bl.2nd"
                    
                    )
 # Load array file of one plant
@@ -660,12 +676,12 @@ for (g in genotypes){
     # Get max slope frames. each electrode col is 1.5mm/0.15cm away. units here are cm and s 
     speed.insumo = data.frame(row= array_SWPparameters$row ,
                              location = ((array_SWPparameters$number-1)*0.15), 
-                             min.slope.frame = (array_SWPparameters$min.slope.frame/samplerate),
-                             halfMaxframe = (array_SWPparameters$halfMaxFrame /samplerate),
-                             depDur = (array_SWPparameters$depDur) ) %>% na.omit()
+                             depol.slope.frame = (array_SWPparameters$depol.slope.frame/samplerate),
+                             halfmax.depol.frame = (array_SWPparameters$halfmax.depol.frame /samplerate),
+                             depol.duration = (array_SWPparameters$depol.duration) ) %>% na.omit()
     
     # calculate slope by regression and by 2 points
-    for (p in which(names(speed.insumo)%in%c("min.slope.frame","halfMaxframe" )) ){
+    for (p in which(names(speed.insumo)%in%c("depol.slope.frame","halfmax.depol.frame" )) ){
         # Speed using Depolarization maximum slope.
         # calculate using regression
       model <- lm( speed.insumo$location ~ speed.insumo[,p] )
@@ -687,10 +703,10 @@ for (g in genotypes){
                                   savename))
     }
     # Calculate duration mean of all electrodes.
-    duration = mean(speed.insumo$depDur)
-    SEM = sd(speed.insumo$depDur)/length(speed.insumo$depDur)
-    duration.correlation = cor.test(speed.insumo$location,speed.insumo$depDur)$p.value %>% round(5)
-    duration.rho = cor.test(speed.insumo$location,speed.insumo$depDur)$estimate %>% round(5)
+    duration = mean(speed.insumo$depol.duration)
+    SEM = sd(speed.insumo$depol.duration)/length(speed.insumo$depol.duration)
+    duration.correlation = cor.test(speed.insumo$location,speed.insumo$depol.duration)$p.value %>% round(5)
+    duration.rho = cor.test(speed.insumo$location,speed.insumo$depol.duration)$estimate %>% round(5)
     durations = rbind(durations, data.frame(duration,
                                          SEM,
                                         "cor_p.val"= duration.correlation,
@@ -703,18 +719,18 @@ for (g in genotypes){
                     data.frame("genotype" = g,
                               "duration.mean" = mean(durations$duration),
                               "duration.SEM" = sd(durations$duration)/nrow(durations),
-                              "slope.reg.mean" = mean( speeds$speed.regression[which(speeds$parameter=="min.slope.frame")] ),
-                              "slope.reg.SEM" = sd(speeds$speed.regression[which(speeds$parameter=="min.slope.frame")])/
-                                length(speeds$speed.regression[which(speeds$parameter=="min.slope.frame")]),
-                              "slope.2e.mean" = mean( speeds$speed.2point[which(speeds$parameter=="min.slope.frame")] ),
-                              "slope.2e.SEM" = sd( speeds$speed.2point[which(speeds$parameter=="min.slope.frame")] )/
-                                length(speeds$speed.2point[which(speeds$parameter=="min.slope.frame")]),
-                              "halfMax.reg.mean" = mean( speeds$speed.regression[which(speeds$parameter=="halfMaxframe")] ),
-                              "halfMax.reg.SEM" = sd(speeds$speed.regression[which(speeds$parameter=="halfMaxframe")])/
-                                length(speeds$speed.regression[which(speeds$parameter=="halfMaxframe")]),
-                              "halfMax.2e.mean" = mean( speeds$speed.2point[which(speeds$parameter=="halfMaxframe")] ),
-                              "halfMax.2e.SEM" = sd( speeds$speed.2point[which(speeds$parameter=="halfMaxframe")] )/
-                                length(speeds$speed.2point[which(speeds$parameter=="halfMaxframe")]))
+                              "slope.reg.mean" = mean( speeds$speed.regression[which(speeds$parameter=="depol.slope.frame")] ),
+                              "slope.reg.SEM" = sd(speeds$speed.regression[which(speeds$parameter=="depol.slope.frame")])/
+                                length(speeds$speed.regression[which(speeds$parameter=="depol.slope.frame")]),
+                              "slope.2e.mean" = mean( speeds$speed.2point[which(speeds$parameter=="depol.slope.frame")] ),
+                              "slope.2e.SEM" = sd( speeds$speed.2point[which(speeds$parameter=="depol.slope.frame")] )/
+                                length(speeds$speed.2point[which(speeds$parameter=="depol.slope.frame")]),
+                              "halfMax.reg.mean" = mean( speeds$speed.regression[which(speeds$parameter=="halfmax.depol.frame")] ),
+                              "halfMax.reg.SEM" = sd(speeds$speed.regression[which(speeds$parameter=="halfmax.depol.frame")])/
+                                length(speeds$speed.regression[which(speeds$parameter=="halfmax.depol.frame")]),
+                              "halfMax.2e.mean" = mean( speeds$speed.2point[which(speeds$parameter=="halfmax.depol.frame")] ),
+                              "halfMax.2e.SEM" = sd( speeds$speed.2point[which(speeds$parameter=="halfmax.depol.frame")] )/
+                                length(speeds$speed.2point[which(speeds$parameter=="halfmax.depol.frame")]))
                         )
   write.csv(speeds, paste(g,"_speeds.csv",sep=""), row.names = FALSE)
   write.csv(durations, paste(g,"_durations.csv",sep=""), row.names = FALSE)
@@ -724,7 +740,7 @@ for (g in genotypes){
 write.csv(data.stats, "data.stats.csv", row.names = FALSE)
 setwd(home)
 
-#mean( speeds$speed.regression[which(speeds$parameter=="min.slope.frame")] )
+#mean( speeds$speed.regression[which(speeds$parameter=="depol.slope.frame")] )
 ```
 
 #
@@ -737,7 +753,7 @@ input - IN THE HOME FOLDER! >genotype<-analysis folder with the "array_SWPparame
 output - A ">genotype<_CompiledParameters.RData" file with a list containing all the parameters of that genotype organized by electrode.
 ```{r}
 setwd(home)
-genotypes = c("slah3-3","slah3-1") #,,"slah3-3", "col0","msl10-1" "slah3-1",
+genotypes = c("col0") #,,"slah3-3", "col0","msl10-1" "slah3-1",
 for (g in genotypes){
   folders = list.dirs()[grep(g, list.dirs())]
   # create list with an element for each electrode
@@ -781,7 +797,7 @@ setwd(home)
 files = list.files()[grep("RData", list.files())]
 for (f in files) {
   load(f)
-  genotype = genotype_params$C_11$plant[1] %>% substr(20,nchar(genotype_params$C_11$plant[1]))
+  genotype = genotype_params$C_11$plant[1] %>% substr(16,nchar(genotype_params$C_11$plant[1]))
   genotype.summary = NULL
   
   
@@ -919,14 +935,15 @@ for( f in files) {
 genotype_params_df = separate(genotype_params_df, Electrode, c("Row", "Column"), sep="_")
 genotype_params_df$Column = as.numeric(genotype_params_df$Column)
 
+
 for( p in unique(genotype_params_df$Parameter) ){
   plot.p <- 
   ggplot( dplyr::filter(genotype_params_df, Parameter == p), #&Genotype=="col0"
-        aes(Column, Value, color = Genotype)) +
+        aes(Column, Value)) + #, color = Genotype
     geom_point( position = position_jitter(0.2) ) + 
-    geom_smooth(aes(color=Genotype), fullrange = TRUE)+ #, se = FALSE
+    geom_smooth(color="black", fullrange = TRUE)+ #, aes(color=Genotype),
     ylab(p) +
-    #ylim(0,80)+
+   # ylim(0,15)+
     scale_x_continuous(name="Electrode position", breaks=c(0:11)) +
     scale_color_manual(values=c('black','#E69F00', '#56B4E9')) +
     theme(
@@ -939,11 +956,11 @@ for( p in unique(genotype_params_df$Parameter) ){
         legend.title = element_text(hjust = 0.1, size = 20),
         panel.grid.major.y = element_line(),
         panel.grid.minor.y = element_blank(),
-        panel.grid.major.x = element_line(), #element_line()
+        panel.grid.major.x = element_line(), #element_line() 
         panel.grid.minor.x = element_blank(),
         panel.background = element_rect()) 
     print(plot.p)
-    ggsave(paste(p,"_scatterplot.pdf"))
+    ggsave(paste(p,"_scatterplot.pdf"), width = 5, height = 5)
 
 }
 
@@ -987,7 +1004,7 @@ genotype_params_df[which(genotype_params_df$Parameter=="hyperpol.halfmax.frame"&
 
 # 7. Generate scatter plots, linear model and violin plots for those variables that have significant correlation in point 6. Use normalized data?
 ```{r}
-parameter = "repol.amplitude"
+parameter = " hyperpol.amplitude.2nd"
 files = list.files()[grep(".RData",list.files())]
 compile.data = data.frame()
 for(f in 1:length(files) ){
@@ -1145,13 +1162,13 @@ ggsave("2023-12-14T16-18-16col0.pdf")
 parameters = NULL
 for ( n in names(genotype_params) ){
   print(n)
-  electrodeN = data.frame("depDur" = genotype_params[[which(names(genotype_params)==n)]]$depDur, 
+  electrodeN = data.frame("depol.duration" = genotype_params[[which(names(genotype_params)==n)]]$depol.duration, 
              "electrode" = n) 
   parameters = rbind(parameters, electrodeN)
 }
 
 parameters = separate(parameters, electrode, c("row", "column") )
-write.csv(parameters, "depDur.csv", row.names = FALSE)
+write.csv(parameters, "depol.duration.csv", row.names = FALSE)
 
 
 ```

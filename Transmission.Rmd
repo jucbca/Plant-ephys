@@ -79,157 +79,6 @@ calculateslope <- function(vector) {
   slopetrace = append(slopetrace, slopetrace[length(slopetrace)])
   return(slopetrace)
 }
-findSWPvalues <- function(time, trace, start.frame){ 
-  ### Set reference time 0 when stimulus is applied: at second 90 for convention
-  stimFrame = which(round(time,2) == 0 )
-  samplerate = length(time)/( time[length(time)] - time[1])
-  
-  ### Filter signal
-  #trace[which(trace < -150)] = trace[1] # DO I NEED THIS FOR THE 32-MEA Make extreme values equal baseline. It's when the electrode looses contact.
-  # smooth with Savitzky-Golay filter.
-  # n is the amount of point befor/after the nth point to be averaged
-  # p is the filter order. Dont know what that is.
-  trace = sgolayfilt(na.omit(trace) , p = 1, n = 91)
-  trace = na.omit(trace) ## if not filtering, just omit NaNs
-  
-  
-  # plot(trace, type = "l") + abline(v=stimFrame)
-  # plot(trace, type = "l") + abline(v=start.frame)
-  
-
-
-
-                        ### Initial baseline
-  bl = mean(trace[ (start.frame-200):(start.frame-2)]) # average from 0 to before stimFrame
-
-                        ### Depolarization peak
-  ### Find peak depolarization
-  maxDepol = min(   na.omit( trace[ start.frame:length(trace) ] )   ) # find peak depol. It's extracellular recording, so depol goes to negative
-  
-  depolFrame = min( which(trace == maxDepol)  )# Find frame at maximum depol 
-  # plot(trace, type = "l") + abline(v=depolFrame) 
-  
-
-  
-                      ### Hyperpol.amplitude
-  ### Find peak of first hyperpolarization between stimulus and depol peak
-  maxHyperpol = max(  na.omit(trace[ start.frame : depolFrame ])   )
-  hyperpolFrame = min( which(trace == maxHyperpol) )# Find frame at maximum hyperpol
-  hyperpol.amplitude = maxHyperpol-bl
-  # plot(trace, type = "l") + abline(v=hyperpolFrame) 
-  
-  
-  
-                        ### depol.amplitude
-  depol.amplitude = maxDepol - abs(maxHyperpol) # Calculate max depol from the peak of hyperpol rather than from the initial baseline
-  
-  
-  
-  
-                        ### minDepolrate frame
-
-  # find the peak slope at depol part of the trace
-  # focus on the chunk between max hyperpol an max depol
-  depolTrace = trace[hyperpolFrame:depolFrame] # plot(depolTrace) 
-  depoltrace.firstderivative = calculateslope(depolTrace) # plot(depoltrace.firstderivative)
-  min.depol.rate =  min(depoltrace.firstderivative)
-  min.slope.frame = min( which(depoltrace.firstderivative == min.depol.rate) )+hyperpolFrame#+stimFrame
-  # plot(trace, type = "l") + abline(v=min.slope.frame) 
-  
-# to find half max frame, substract the halfMax V from the trace and pick the closest to 0.
-  # min.slope.frame = min (
-  #   which (  abs((depolTrace)-halfDepol ) == min( abs((depolTrace)-halfDepol))  )  ## Find the time at Halfdepol
-  # ) #+ stimFrame 
-  
-  
-  
-                     ### find half maximum of depol (bl to depol)
-  
-  halfMaxDepol = bl - abs( (maxDepol - bl)/2 )
-  halfMaxFrame = min( which( abs(depolTrace-halfMaxDepol) <= min(abs(depolTrace-halfMaxDepol)) ) ) + hyperpolFrame
-  # plot(abs(depolTrace-halfMaxDepol))
-  # plot(trace, type = "l") + abline(v=halfMaxFrame) 
-  
-
-                      ### max hyperpol rate
-  # focus on the chunk between max hyperpol an max depol
-  hyperpolTrace = trace[start.frame: hyperpolFrame] # checks the trace 20s before the peak hyperpol. plot(hyperpolTrace)
-  hyperpoltrace.firstderivative = calculateslope(hyperpolTrace) # plot(hyperpoltrace.firstderivative)
-  max.hyperpol.rate = max(hyperpoltrace.firstderivative)
-  ### Save time of max slope
-  max.slope.frame = min( which(hyperpoltrace.firstderivative == max.hyperpol.rate) ) + start.frame
-  #  plot(hyperpolTrace) + abline(v= (max.slope.frame-start.frame) ) 
-  #  plot(trace, type = "l") + abline(v=max.slope.frame) 
-  
-                       ### Hyperpol.halfmax
-  hyperpol.halfmax = bl + (hyperpol.amplitude/2)
-  # pick trace between start.frame and peak hyperpol frame
-  hyperpol.halfmax.frame = min( which( abs(hyperpolTrace-hyperpol.halfmax) <= min(abs(hyperpolTrace-hyperpol.halfmax)) ) ) + start.frame
-  #  plot(hyperpolTrace) + abline(v= (hyperpol.halfmax.frame-start.frame) ) 
-  #  plot(trace, type = "l") + abline(v=hyperpol.halfmax.frame)   
-
-                      ### hyperpol.duration from max hyperpol slope to min depol slope
-  
-  hyperpol.duration = time[min.slope.frame] - time[max.slope.frame]
-  
-                          ### second baseline
-  ### Find second baseline i.e. after repolarization
-  bl2 = mean(trace[   (length(trace)-(60*samplerate) ): length(trace)   ])
-  
-  
-  
-  
-                        ### repol.amplitude
-    # focus on repolarization part of the trace
-  repolTrace = trace[(depolFrame+1):length(trace)] # plot(repolTrace)
-  maxRepol = max(repolTrace) # maximum repolarization
-  maxRepolframe = min( which(repolTrace == maxRepol) ) +depolFrame+1
-  repol.amplitude = maxRepol-bl2 # Find hyperpolarization amplitude in the recovery phase
-  # former maxHyperpol2
-  # plot(trace, type = "l") + abline(v=maxRepolframe) 
-  
-                        ### maxRepol/2 frame
-  halfRepol = maxRepol + ((maxDepol-maxRepol)/2) # bl2 + (maxDepol - bl2)/2 # 
-  halfRepolframe =  min( which( abs(repolTrace-halfRepol) <= min(abs(repolTrace-halfRepol)) ) ) + depolFrame +1
-    # plot(trace, type = "l") + abline(v=halfRepolframe) 
-  
-                            ### Depolarization duration
-  #Time from halfmax raise and decay        
-  depDur = time[halfRepolframe ] - time[min.slope.frame]
-  
-
-  
-  #return all these
-  SWPvalues = data.frame(
-  bl,
-  stimFrame,
-  # hyperpol
-  max.hyperpol.rate,
-  max.slope.frame,
-  hyperpol.amplitude,
-  hyperpol.duration,
-  hyperpol.halfmax,
-  hyperpol.halfmax.frame,
-  # depol
-  min.depol.rate,
-  min.slope.frame,
-  halfMaxFrame,
-  depolFrame,
-  depol.amplitude,
-  depDur,
-  # repol
-  halfRepolframe,
-  repol.amplitude,
-  maxRepolframe,
-  
-  bl2
- 
-  
-  )
-  return(SWPvalues)
-  #return( list(trace, SWPvalues))
-  
-} # time- time vector; trace- voltage vector in mV!; start.frame - define 15 s before hyperpol peak before signal start
 encode_MEA <- function(){
     # Determine the arbitrary order of electrodes in the 32-MEA. 
   MEA_E6basipetal = list("rowX" = c("E1","E2","E3","E4","E5","E17","E28","E29","E30","E31","E32"),
@@ -352,8 +201,8 @@ for (f in files){
     }
   }
 
-  # go through all the columns and normalize them to their baseline. That is the first 5 seconds of the recording
-  normalize.point = which(traces.all$time == 5) # at second 5
+  # go through all the columns and normalize the voltage to their baseline. That is the first 5 seconds of the recording
+  normalize.point = which(traces.all$time == 5) # index at second 5
            
   # Now normalize
   for( c in 2:33){
@@ -372,9 +221,7 @@ for (f in files){
   trace.plot = gather( na.omit(trace.plot) , "e", "mV", 2:33)
   trace.events = traces.all$time[which(traces.all$events == 1)] - 0.5
   
-  # if ( length(trace.events) > 0 ){
-  #    trace.plot = dplyr::filter(trace.plot, time>(trace.events[1]-5) & time<(trace.events[length(trace.events)]+5) )
-  # }
+# Plot
   plot <- ggplot(trace.plot, aes(time, mV, col = e) ) +
     geom_line() +
     geom_vline(xintercept = trace.events ) + 
@@ -388,6 +235,8 @@ setwd(home)
 ```
 
 
+
+# 2 Plotting of transmission experiments with sine wave or ACR1 stimulation
 ```{r}
 setwd(home)
 #

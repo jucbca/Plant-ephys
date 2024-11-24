@@ -66,20 +66,21 @@ PlotTrace <- function(trace,from=0,to=max(na.omit(trace$Time)), extraInfo = "" )
   
 }
 NormalizeBaseline <- function(trace, normTime = 0 ){
-  stimIndex = which(trace$Time == normTime)
+  stimIndex = which(trace$Time == normTime)[1]
   for(i in c(3:ncol(trace)) ){
     trace[,i] = trace[,i]-trace[stimIndex,i]
   } # Normalize the trace w/ the baseline. make all start at zero.
-  trace = gather(trace, "electrode", "mV", 3:ncol(trace)) # change structure for ggplot management
+  trace = gather(trace, "Electrode", "mV", 3:ncol(trace)) # change structure for ggplot management
+  trace$mV = trace$mV*100
   return(trace)
-} ## INPUT trace spreaded i.e. each electrode as column. Won't work if data is not at 10Hz samplerate. Output: normalized, gathered trace for plotting.
+} ## INPUT trace spreaded i.e. each electrode as column. Won't work if data is not at 10Hz samplerate. Output: normalized, gathered trace for plotting, Voltage data transformed from V to mV!
 CalculateParameters <- function(trace, stimdelay = 1){
 # in the chunk during stimulation on.
   #stimdelay=0
   trace$mV = abs(trace$mV)*-1
   stimon = which(trace$TimeOfDay=="F1")[1] + stimdelay 
   stimoff= which(trace$TimeOfDay=="F1")[2] + stimdelay 
-   # plot(trace$mV)+abline(v=stimon)+abline(v=stimoff)
+   # plot(trace$mV, type="l")+abline(v=stimon)+abline(v=stimoff)
   stimchunk = na.omit(trace[stimon:(stimoff+10),])
   # plot(stimchunk$mV)
   
@@ -101,6 +102,8 @@ CalculateParameters <- function(trace, stimdelay = 1){
 
   if ( nrow(stimchunk)>=50 ){
       ss.depol = mean( stimchunk$mV[(nrow(stimchunk)-50):nrow(stimchunk)] )
+  } else {
+    ss.depol = NaN
   }
 
   
@@ -151,7 +154,7 @@ CalculateParameters <- function(trace, stimdelay = 1){
 
 } # input. dataframe for one pulse on one electrode 
 CheckSampleRate <- function(trace){
-  sampleRate = round(60/as.numeric(trace$Time[60]),1) # 60 samples in x seconds that ran in the first 60 samples. (Hz)
+  sampleRate = round(60/as.numeric(trace$Time[60+1]),1) # 60 samples in x seconds that ran in the first 60 samples. (Hz)
   if(round(sampleRate) < 10){
     print("ERROR! sample rate is not 10Hz. Quantification won't work")
   } else {
@@ -393,7 +396,7 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   intensity = strsplit(metaData,"_")[[1]][grep("I",strsplit(metaData,"_")[[1]])]
   intensity = substr(intensity,2,3)
   intSplit = strsplit(intensity, "")
-  if ( intSplit[[1]][2] == "." ){
+  if ( intSplit[[1]][1] == "." ){
     intensity = 6 #as.numeric(intensity) + 6. ### Change if each pulse is in a file
   } else {
     intensity = 0 # as.numeric(intensity)
@@ -402,10 +405,10 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
 
   
   electrodeNums = NULL## Save the number of the electrode
-  for(i in  names(trace)[3:ncol(trace)] ){
+  for(i in  names(trace)[3:(2+max(pickElectrodes))] ){
     electrodeNums = append(electrodeNums, as.numeric( substr(i,2, 2) ))
   }
-  names(trace)[3:ncol(trace)] = electrodeNums # Make the columns' names numeric variables
+  names(trace)[3:(2+max(pickElectrodes))] = electrodeNums # Make the columns' names numeric variables
   # Select just few electrodes.
   #pickElectrodes = c(1)#c(1,2)
   trace = trace[,c(1,2,which(names(trace)%in%pickElectrodes))]
@@ -414,11 +417,9 @@ for( f in list.files()[grep(".txt",list.files())] ){ #
   stim.indexes =  which(trace$TimeOfDay == "F1")-1
   stimTimes = trace$Time[stim.indexes]
 
-  which(trace$Time == 0)
+  #which(trace$Time == 0)
   # normalize and gather
   trace = NormalizeBaseline(trace, normTime = 1)
-  # fix voltage units to mV
-  trace$mV = trace$mV * 100
   #
   ##
   ###
@@ -705,20 +706,36 @@ for(f in files){
 4.1
 Define the power of the different intensities with a dictionary. Then modify the >savename.RData< file in step 4.2
 ```{r}
-intensity.values = c("0.5" = 0.03,
-                     "1" = 0.06,
-                     "2" = 0.13,
-                     "3" = 0.22,
-                     "4" = 0.48,
-                     "5" = 0.99,
-                     "6" = 1.19,
-                     "6.5" = 26.33,
-                     "7" = 52.63,
-                     "8" = 114.10,
-                     "9" = 186.8,
-                     "10" = 458.33,
-                     "11" = 881,
-                     "12" = 1047.67 )
+#How many pulses per intensity?
+ppi = 1#pulse per intentisty
+intensity.values = c("0.5" = 49.89,
+                     "1" = 96.6,
+                     "2" = 218.68,
+                     "3" = 347.13,
+                     "4" = 713.38,
+                     "5" = 1117.83,
+                     "6" = 1165.61)
+# intensity.values = c("0.5" = 0.03,
+#                      "1" = 0.06,
+#                      "2" = 0.13,
+#                      "3" = 0.22,
+#                      "4" = 0.48,
+#                      "5" = 0.99,
+#                      "6" = 1.19,
+#                      "6.5" = 26.33,
+#                      "7" = 52.63,
+#                      "8" = 114.10,
+#                      "9" = 186.8,
+#                      "10" = 458.33,
+#                      "11" = 881,
+#                      "12" = 1047.67 )
+
+# # change intensity values of the complete summary. Change the dictionary then run this loop
+# for( i in unique(DoseResponse_datasummary$Intensity) ){
+#   DoseResponse_datasummary$Intensity[which(DoseResponse_datasummary$Intensity==i)] =
+#     intensity.values[which(names(intensity.values) == i)]
+# }
+# write.csv(DoseResponse_datasummary, "DoseResponse.datasummary.csv",row.names = FALSE )
 ```
 4.2
 input   -  >savename.RData< traces separated by pulses, "intensity.values" variable defined in 4.1
@@ -738,10 +755,11 @@ for( f in grep("RData",list.files()) ){ # go through the lists of the different 
   load(list.files()[f])
   print(length(trace.segmented))
   trace.joint = append( trace.joint, trace.segmented)
+  savename = substr(list.files()[f], 1, 5) 
 }
-savename = substr(list.files()[f], 1, 5) 
-save(trace.joint, file = paste(batchfolder,"/",savename, "-joint.RData",sep = ""))
-
+if( length(grep("RData",list.files()))>1 ){
+  save(trace.joint, file = paste(batchfolder,"/",savename, "-joint.RData",sep = ""))
+} 
 
 
 # Set the intensities of all pulses. Increases every 4 pulses. and Pick each 4th pulse. and analyze!
@@ -749,12 +767,22 @@ index4 = 1
 index.intensity = 1
 trace.compilation = NULL
 datasummary = NULL
-for( i in 1:(4*length(intensity.values)) ) {
+for( i in 1:(ppi*length(intensity.values)) ) {
   trace.joint[[i]]$'1'$Intensity = intensity.values[index.intensity]
   # keep 1st trace of that intensity for analysis
   if ( index4 == 1){ 
+        # given interruption in the data aqcuisition time vector might restart. Identify if there is more than one 0 and make unique time vector 
+    if( length(which(trace.joint[[i]]$'1'$Time==0)) >= 1 ){
+          trace.joint[[i]]$'1'$Time[
+      which(trace.joint[[i]]$'1'$Time==0):nrow(trace.joint[[i]]$'1')
+      ] = trace.joint[[i]]$'1'$Time[
+      which(trace.joint[[i]]$'1'$Time==0):nrow(trace.joint[[i]]$'1')
+      ] + trace.joint[[i]]$'1'$Time[ (which(trace.joint[[i]]$'1'$Time==0)-2) ]
+    }
+
       # normalize time to start at 0 for that pulse
     trace.joint[[i]]$'1'$Time = trace.joint[[i]]$'1'$Time-trace.joint[[i]]$'1'$Time[1]
+ 
       # normalize voltage to that 1 s before the pulse
     trace.joint[[i]]$'1'$mV = trace.joint[[i]]$'1'$mV - 
       trace.joint[[i]]$'1'$mV[ which(trace.joint[[i]]$'1'$TimeOfDay  == "F1")-10 ][1]
@@ -782,7 +810,7 @@ for( i in 1:(4*length(intensity.values)) ) {
   }
   print(index4)
   index4 = index4 + 1
-  if(index4 > 4 ){ 
+  if(index4 > ppi ){ 
     index4 = 1
     index.intensity = index.intensity + 1 
   }
@@ -802,9 +830,10 @@ for( i in 1:length(trace.compilation)){
 
 ggplot( trace.plot, aes(Time, mV, group = Intensity, color = Intensity) )+ #dplyr::filter(trace.compilation, Intensity==c(1,2))
   geom_line() + 
-  scale_color_gradient( low="black", high="darkorange") +
+  scale_color_gradient( low="black", high="darkorange")+
   # add stim:
-  geom_vline(xintercept = trace.compilation$Time [which( is.na(trace.compilation$Time) == TRUE )+10][1:2], color = "darkolivegreen3", linetype = "dashed" ) +
+  geom_vline(xintercept = trace.compilation[[1]]$Time[which(trace.compilation[[1]]$TimeOfDay=="F1")+10][1:2], 
+             color = "darkolivegreen3", linetype = "dashed" ) +
   labs (x = "seconds", color = "µW/mm2") + 
   ggtitle( paste(datasummary$Genotype[1],datasummary$Leaf[1],datasummary$id[1] ) ) +
   
@@ -831,7 +860,7 @@ output  - Plot of calculated variables vs the duration of the stimulus in log sc
 ```{r}
 setwd(home)
 # get all the summaries in the same data frame
-folders = grep("doseResp", list.files())
+folders = grep("msl", list.files())
 dates = c()
 id = 1
 DoseResponse_datasummary = data.frame()
@@ -854,6 +883,8 @@ for (f in folders ){
   print(id)
 }
 write.csv(DoseResponse_datasummary, "DoseResponse.datasummary.csv",row.names = FALSE )
+
+
 
 # Violin plot for each parameter calculated
 My_Theme =  theme(
@@ -1051,9 +1082,6 @@ figure <-
 
 
 
-
-
-
  5. Run statistics! Decide which ones you want to run
 
 
@@ -1066,7 +1094,15 @@ setwd(batchfolder)
 # pick values where stimulus is applied on the recording electrode
 # onelectrode.data = datasummary %>% slice(which(datasummary$position %>% substr(2,2) %>% as.integer() == datasummary$electrode))
 # set position column
-datasummary = read.csv( "KOlines.datasummary.csv" )
+datasummary = read.csv( "parameters_summary.csv" )
+
+# datasummary = dplyr::filter(datasummary, treatment=="Glu100mM" & electrode==2)
+# datasummary = datasummary[,1:11]
+# datacompilation = rbind(datacompilation, datasummary)
+# datacompilation = datacompilation[grep("Col",datacompilation$Genotype),]
+# write.csv(datacompilation, "datacompilation.csv", row.names = FALSE)
+
+
 position = c()
 for( i in 1:nrow(datasummary)) {
   if ( length( grep( datasummary$electrode[i] ,  datasummary$`onepulse.Stim.1.`[i]) ) == 1 ){
@@ -1259,32 +1295,33 @@ input   -   datasummary.csv
 output  - 
 ```{r}
 # Violin plot for each parameter calculated
-My_Theme =  theme(
-  axis.text.x = element_text(color = "black", size = 20, angle = 0, hjust = 0.5, vjust = 0, face = "plain"),
+head(datasummary)
+parameters2plot = c("peak.depol",
+                    "peak.depol.slope",
+                    "tau")
+for( v in which(names(datasummary)%in%parameters2plot) ){
+figure <-   ggplot(dplyr::filter(datasummary), aes(Genotype, datasummary[,v] )) +
+  geom_boxplot()+
+  geom_jitter( position=position_jitter(seed=3,width=0), 
+               size = 3, shape=1) +
+  #geom_point(size = 3) +
+
+  #xlim(c(1,5)) +
+  xlab ("") + 
+  ylab (names(datasummary)[v]) + 
+  ggtitle(paste( unique(datasummary$treatment)[3]," treatment", " Power-6", sep="") ) +
+  theme(
+  axis.text.x = element_text(color = "black", size = 10, angle = 0, hjust = 0.5, vjust = 0, face = "plain"),
   axis.text.y = element_text(color = "black", size = 20, angle = 0, hjust = 0 , vjust = 0.5, face = "plain"),
-  axis.title.x = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), #element_blank(), #
+  axis.title.x = element_text(color = "black", size = 10, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), #element_blank(), #
   axis.title.y = element_text(color = "black", size = 25, angle = 90, hjust = 0.5, vjust = 1, face = "plain"),
-  plot.title = element_text(color = "black", size = 25, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), # element_blank(), 
+  plot.title = element_text(color = "black", size = 10, angle = 0, hjust = 0.5, vjust = 0, face = "plain"), # element_blank(), 
   legend.text = element_text(size = 20),
   legend.title = element_text(hjust = 0.1, size = 20),
   panel.grid.major.y = element_blank(),
   panel.grid.minor.y = element_blank(),
   panel.grid.major.x = element_line(), #element_blank(), #element_line()
   panel.grid.minor.x = element_line()) 
-
-head(datasummary)
-parameters2plot = c("peak.depol",
-                    "peak.depol.slope",
-                    "tau")
-for( v in which(names(datasummary)%in%parameters2plot) ){
-figure <-   ggplot(dplyr::filter(datasummary), aes(treatment.time, datasummary[,v], color = `electrode` )) +
-  geom_point(size = 3) +
-
-  #xlim(c(1,5)) +
-  xlab ("time after treatment (s)") + 
-  ylab (names(datasummary)[v]) + 
-  ggtitle(paste( unique(datasummary$treatment)[3]," treatment", " Power-6", sep="") ) +
-  My_Theme
 print(figure)
 ggsave(paste(batchfolder,"/Treatment-",names(datasummary)[v],".pdf",sep = "") )
 }
